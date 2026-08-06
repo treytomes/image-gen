@@ -1,0 +1,24 @@
+{
+    "cSpell.words": [
+        "appsettings",
+        "Cuda",
+        "denoising",
+        "gguf",
+        "HPPH",
+        "IDAT",
+        "IEND",
+        "IHDR",
+        "imagegen",
+        "madebyollin",
+        "oversaturate",
+        "runwayml",
+        "safetensors",
+        "scanlines",
+        "sdturbo",
+        "sdxl",
+        "sdxlturbo",
+        "Serilog",
+        "stabilityai",
+        "truecolor"
+    ]
+}
