@@ -12,47 +12,59 @@ what's uncertain, and the smallest useful first step.
 **Goal:** Let the user watch the image form step-by-step and stop early once the
 result is good enough (or abandon a bad run without waiting for all steps).
 
-### What the library gives us
+**Verdict after research: FEASIBLE as monitor-and-abort. Recommended to build.**
 
-- `StableDiffusionCpp.Preview` — a static event, and `EnablePreview(mode, interval,
-  denoised, noisy)` to turn it on. This emits the **partially-denoised latent** at a
-  configurable step interval. Confirmed present in v7 (seen during the progress-bar
-  work); the exact `StableDiffusionPreviewEventArgs` shape still needs to be read.
-- `StableDiffusionCpp.Progress` — already wired up; fires per sampling step. Requires
-  `StableDiffusionCpp.InitializeEvents()` first (already called in the engine).
+### Research findings (StableDiffusion.NET 7.0.0, verified by reflection)
 
-### The hard constraint
+- `StableDiffusionCpp.Preview` is a **static event**; `StableDiffusionCpp.EnablePreview(
+  Preview mode, int interval, bool denoised, bool noisy)` turns it on. Both are static.
+- `Preview` enum modes: `None, Proj, TAE, VAE`. `TAE` = tiny autoencoder preview (fast,
+  approximate); `VAE` = full decode (accurate, slower); `Proj` = cheap latent projection.
+- **`StableDiffusionPreviewEventArgs` gives us `{ int Step, bool IsNoisy, Image<ColorRGB> Image }`.**
+  The payload is an **already-decoded image**, not a raw latent — and it is
+  `HPPH.Image<ColorRGB>`, the *exact type* `Png.cs` already encodes. So writing preview
+  frames is essentially free plumbing: reuse `Png.Save(image.ToRawArray(), ...)`.
+- `StableDiffusionCpp.Progress` (already wired) also fires per step; both events require
+  `StableDiffusionCpp.InitializeEvents()`, already called in the engine.
+- Events are **static/global**, but our generation queue uses a **single worker**
+  (`GenerationQueue`, `singleReader: true`), so only one generation runs at a time —
+  no cross-run event interleaving to guard against.
 
-`DiffusionModel.GenerateImage(...)` is a **single blocking native call**. There is no
-exposed "run to step N, hand control back, resume from N" entry point. So the honest
-scope is **monitor-and-abort**, not true pause/resume:
+### The hard constraint (confirmed)
 
-- We *can*: show live preview thumbnails, and cancel the run early via the
-  `CancellationToken` the engine already threads through (need to confirm the native
-  side honors cancellation mid-sample; if not, cancellation only takes effect between
-  jobs).
-- We *cannot* (without a bigger change): freeze at step N, inspect, then continue the
-  *same* latent to completion. That would require either a library feature that
-  surfaces the sampling loop, or reimplementing the sampler loop against lower-level
-  bindings.
+`DiffusionModel.GenerateImage(ImageGenerationParameter)` is the only entry point — a
+**single blocking native call with no `CancellationToken` parameter** and no step
+delegate. So:
 
-### Proposed first step (spike)
+- We **can**: emit live preview frames at an interval and let the user watch progress.
+- We **cannot** (without a bigger change): truly pause at step N, inspect, then resume
+  the *same* latent. No resume entry point exists.
+- Early cancellation is **uncertain**: since `GenerateImage` takes no token, aborting
+  mid-run likely isn't possible cleanly — cancellation probably only takes effect
+  between jobs. NEEDS A RUNTIME TEST to confirm (see step 4).
 
-1. Read `StableDiffusionPreviewEventArgs` to learn what the preview payload is
-   (latent buffer? decoded image? dimensions?).
-2. Call `EnablePreview(...)` in the engine and subscribe to `Preview`, converting each
-   preview to a PNG in a temp/preview directory (reuse `Png.cs`).
-3. Add a `generate --preview <interval>` option that writes those intermediate frames
-   so the user can eyeball progress.
-4. Verify whether cancelling the `CancellationToken` actually interrupts an in-flight
-   `GenerateImage` on CPU. Document the answer either way.
+So the honest, shippable scope is **"watch it form + optionally kill the run"**, not
+pause/resume.
+
+### Proposed first step (spike) — low risk, most plumbing already exists
+
+1. ~~Read `StableDiffusionPreviewEventArgs`~~ **DONE** — `{ Step, IsNoisy, Image<ColorRGB> }`.
+2. In the engine, call `EnablePreview(Preview.TAE, interval, denoised: true, noisy: false)`
+   and subscribe to `Preview`; on each event, `Png.Save` the frame to a preview dir
+   (e.g. `out/preview/<preset>-<timestamp>/step-NNN.png`). Unsubscribe in the `finally`
+   alongside the existing `Progress` handler.
+3. Add `generate --preview <interval>` (0 = off, the default) to write intermediate frames.
+4. **Runtime test:** can an in-flight `GenerateImage` be interrupted at all? Try aborting
+   the worker's token mid-run and observe. Document the answer — it sets whether "abort"
+   is real or just "let it finish, then discard."
 
 ### Open questions
 
-- Does the native call honor cancellation mid-sample, or only between jobs?
-- Preview payload format and cost — decoding a preview every N steps adds VAE work;
-  measure the overhead (especially relevant on CPU-only targets).
-- UX: write frames to disk vs. attempt in-terminal display. Disk is the safe default.
+- Cancellation mid-sample: possible, or only between jobs? (step 4)
+- Preview cost on CPU: `VAE` mode decodes every N steps and could dominate runtime on
+  CPU-only targets; `TAE` is the cheap default. Measure overhead at a couple intervals.
+- UX: write frames to disk (safe default) vs. in-terminal display (Spectre can't show
+  raster images; would need sixel/kitty support — out of scope).
 
 ---
 
@@ -66,41 +78,75 @@ Temperature is an LLM sampling concept; CFG controls how hard diffusion is pushe
 toward the prompt. The high→low-over-time intuition is a real and useful technique,
 just under the CFG name.
 
-### The hard constraint
+**Verdict after research: NOT feasible for true per-step CFG scheduling without a
+custom sampler. PARK the scheduling ambition; a couple of adjacent knobs exist.**
 
-`SampleParameter.Guidance.TxtCfg` is a **single scalar** applied for the whole run.
-The v7 API surface reviewed so far exposes no per-step CFG schedule / callback. So
-this is blocked on one of:
+### Research findings (StableDiffusion.NET 7.0.0, verified by reflection)
 
-- **(a)** A library feature — some hook to vary guidance per step. Needs investigation;
-  may not exist.
-- **(b)** Custom sampling loop — drive the denoise steps ourselves against lower-level
-  bindings, applying our own CFG curve. Significantly more code and ties us to
-  internals; likely out of scope for this app.
-- **(c)** Approximation by segmentation — run a few steps at high CFG, then (if the
-  library ever exposes resume) continue at lower CFG. Currently blocked by the same
-  "no resume" limitation as feature #1.
+- `SampleParameter.Guidance` is a `GuidanceParameter` with scalar fields:
+  `TxtCfg`, `ImgCfg`, `DistilledGuidance`, and an `Slg` sub-parameter. **All scalars —
+  set once, applied to the whole run.** No per-step CFG array or callback anywhere.
+- `GenerateImage` takes only the parameter object — **no step delegate** to vary
+  guidance mid-run. Same single-blocking-call constraint as feature #1.
+- So true "high CFG early, low CFG late" is **blocked**: it needs either a native
+  guidance-schedule feature (none exposed) or a custom sampling loop (out of scope —
+  significant code, couples us to internals, questionable payoff on CPU-only).
 
-### Proposed first step (investigation, no code yet)
+### Adjacent levers that *do* exist (worth knowing, not the same feature)
 
-1. Audit the full v7 `SampleParameter` / guidance surface and any sampler options for
-   anything schedule-shaped (curves, arrays, callbacks). Reflection dump + changelog.
-2. Check upstream stable-diffusion.cpp for CFG-schedule support that the wrapper may
-   not surface yet — if it exists natively, the ask becomes a wrapper feature request.
-3. If neither (a) nor a cheap (c) is available, park this feature and record why.
+- **`SampleParameter.CustomSigmas` (`float[]`)** — a custom **noise schedule** (the
+  per-step sigma curve the sampler follows). This is not CFG, but it's the closest
+  per-step control the API exposes: it shapes how aggressively denoising proceeds at
+  each step. Could enable experiments like front-loading denoising. Semantics are
+  defined by upstream stable-diffusion.cpp, not documented in the wrapper's XML.
+- **`SampleParameter.Scheduler`** enum (Karras, Exponential, AYS, GITS, …) — swappable
+  built-in schedules; a coarse, whole-run alternative to hand-rolled sigmas.
+- **`Slg` (Skip-Layer Guidance)** — `{ int[] Layers, float SkipLayerStart, float
+  SkipLayerEnd, float Scale }`. Notably, `SkipLayerStart`/`SkipLayerEnd` are
+  **start/end fractions**, i.e. this *one* guidance mechanism already varies across the
+  run. It's a different knob than CFG, but it's proof the native side can gate guidance
+  by progress — a hint that a CFG schedule could be a reasonable upstream feature ask.
+
+### Recommendation
+
+1. **Park true CFG scheduling** — not worth a custom sampler for a CPU-only tool.
+2. If there's appetite to experiment, the cheap path is exposing **`Scheduler`** (and
+   possibly `CustomSigmas`) as `generate` options — that gives real per-run control over
+   the denoise trajectory without touching guidance internals.
+3. Optionally file/track an upstream request for a CFG schedule, citing that `Slg`
+   already gates guidance by start/end fraction.
 
 ### Open questions
 
-- Does stable-diffusion.cpp support any built-in guidance schedule?
-- Is the payoff worth a custom sampling loop? Probably not for a CPU-only tool unless
-  quality gains are clear.
+- What exactly does `CustomSigmas` expect (length = steps? sigma ordering high→low)?
+  Needs an upstream stable-diffusion.cpp read + a runtime trial.
+- Would exposing `Scheduler` alone satisfy the underlying goal (varying the denoise
+  trajectory), making the CFG-schedule ask unnecessary?
 
 ---
 
-## Shared prerequisite
+## Shared finding
 
-Both features would benefit from the generation path exposing richer control than the
-current single blocking `GenerateImage` call. Before committing to either, confirm
-whether StableDiffusion.NET v7 (or a newer version) offers a stepwise/streaming
-generation API. If a later version does, upgrading may unlock both features far more
-cheaply than working around the current one.
+Both features are ultimately gated by the same constraint: **`GenerateImage` is one
+blocking native call** with no cancellation token and no step delegate. Research
+confirmed v7 exposes no stepwise/streaming generation API and no resume entry point.
+
+- Feature #1 works *around* this via the `Preview` event (observe-only), so it's
+  shippable as monitor-and-abort.
+- Feature #2's core ask (per-step CFG) cannot be worked around without a custom sampler.
+
+**Next-version check:** before investing further in either, look at whether a newer
+StableDiffusion.NET / stable-diffusion.cpp release adds a stepwise or cancellable
+generation API. If so, upgrading likely unlocks true pause/resume *and* CFG scheduling
+far more cheaply than working around the current single-call design. The wrapper pins a
+specific upstream commit (`StableDiffusionCpp.ExpectedSDCommit`) — compare against
+upstream `master` when evaluating an upgrade.
+
+## Research status
+
+- **Done:** v7 API surface reflected and documented above (preview event args, guidance
+  params, sampler options, event staticness, no-cancellation-token fact).
+- **Still needs a runtime trial (not just reflection):**
+  1. Whether an in-flight `GenerateImage` can be cancelled at all (feature #1, step 4).
+  2. Preview decode overhead on CPU at a couple of intervals / modes (`TAE` vs `VAE`).
+  3. What `CustomSigmas` expects and whether it meaningfully changes output.
