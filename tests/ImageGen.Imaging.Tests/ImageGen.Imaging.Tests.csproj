@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\src\ImageGen.Imaging\ImageGen.Imaging.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
