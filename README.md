@@ -83,8 +83,18 @@ dotnet run -- generate sd15 "a red fox in a snowy forest" --preview 4
 Frames land in a `<output>.previews/` directory next to the final image, named
 `step-0001.png`, `step-0004.png`, … (the first and last steps are always kept).
 `--preview-mode` picks the decoder: `tae` (fast, default), `vae` (accurate but
-slow), or `proj` (cheapest). Previews add real cost on CPU — a frame is decoded
-at every step internally — so use them for exploration, not timed runs.
+slow), or `proj` (cheapest).
+
+**Why previews are slow.** A diffusion model works in a compressed *latent*
+space, not pixels; turning a latent into a viewable image requires a decoder
+(neural-network) pass. Normally that decode runs **once**, at the end. With
+previews on, the underlying library decodes on **every** step to hand us an
+image — that extra per-step decode is the real cost (a 12-step run roughly
+doubled in our CPU tests). The `--preview <N>` interval is enforced on our side
+to limit how many frames are *written* to disk, but it does not reduce the
+per-step decode the library performs, so the time cost stays. Saving each PNG is
+cheap by comparison (a few ms). Bottom line: use previews for exploration, not
+timed runs, and prefer `tae` over `vae` on CPU.
 
 ### Downloading models
 
