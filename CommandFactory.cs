@@ -41,6 +41,18 @@ public static class CommandFactory
         var negOpt = new Option<string?>("--negative", "-n") { Description = "Negative prompt." };
         var threadsOpt = new Option<int?>("--threads") { Description = "CPU thread count (default: all cores)." };
         var sizeOpt = new Option<string?>("--size") { Description = "Dimensions as WxH, e.g. 512x512." };
+        var schedulerOpt = new Option<string?>("--scheduler")
+        {
+            Description = $"Sampling scheduler ({string.Join(", ", Enum.GetNames<Scheduler>())}). " +
+                          "Overrides the preset default; AYS suits low step counts.",
+        };
+        schedulerOpt.AcceptOnlyFromAmong(Enum.GetNames<Scheduler>());
+        var countOpt = new Option<int>("--count", "-c")
+        {
+            Description = "Generate this many images, incrementing the seed each time. " +
+                          "Ctrl-C stops after the current image finishes.",
+            DefaultValueFactory = _ => 1,
+        };
         var previewOpt = new Option<int>("--preview")
         {
             Description = "Save an intermediate preview image every N sampling steps (0 = off).",
@@ -56,7 +68,7 @@ public static class CommandFactory
         var cmd = new Command("generate", "Generate an image from a text prompt.")
         {
             presetArg, promptArg, outOpt, seedOpt, stepsOpt, cfgOpt, negOpt, threadsOpt, sizeOpt,
-            previewOpt, previewModeOpt,
+            schedulerOpt, countOpt, previewOpt, previewModeOpt,
         };
 
         cmd.SetAction(async (parseResult, cancellationToken) =>
@@ -84,7 +96,22 @@ public static class CommandFactory
                 _ => Preview.TAE,
             };
 
-            var request = new GenerationRequest
+            Scheduler? scheduler = parseResult.GetValue(schedulerOpt) is { } schedRaw
+                && Enum.TryParse<Scheduler>(schedRaw, out var s) ? s : null;
+
+            var count = Math.Max(1, parseResult.GetValue(countOpt));
+            var explicitOut = parseResult.GetValue(outOpt);
+            var baseSeed = parseResult.GetValue(seedOpt);
+
+            // For a batch, an explicit --out would collide across images; fall back to
+            // timestamped per-seed names and note it.
+            if (count > 1 && explicitOut is not null)
+            {
+                AnsiConsole.MarkupLine("[yellow]--out is ignored with --count > 1; using timestamped names.[/]");
+                explicitOut = null;
+            }
+
+            GenerationRequest MakeRequest(long seed) => new()
             {
                 Preset = preset,
                 Prompt = parseResult.GetValue(promptArg)!,
@@ -93,16 +120,22 @@ public static class CommandFactory
                 Height = size?.Height,
                 Steps = parseResult.GetValue(stepsOpt),
                 Cfg = parseResult.GetValue(cfgOpt),
-                Seed = parseResult.GetValue(seedOpt),
+                Scheduler = scheduler,
+                Seed = seed,
                 Threads = parseResult.GetValue(threadsOpt),
-                OutputPath = parseResult.GetValue(outOpt),
+                OutputPath = explicitOut,
                 PreviewInterval = Math.Max(0, parseResult.GetValue(previewOpt)),
                 PreviewMode = previewMode,
             };
 
-            PrintRequestSummary(request);
+            PrintRequestSummary(MakeRequest(baseSeed));
+            if (count > 1)
+                AnsiConsole.MarkupLineInterpolated(
+                    $"[grey]Batch of {count}, seeds {baseSeed}–{baseSeed + count - 1}. Ctrl-C stops after the current image.[/]");
 
             var queue = services.GetRequiredService<GenerationQueue>();
+            var completed = 0;
+            var canceled = false;
 
             // A live progress bar driven by the engine's step-progress hook (via the
             // background worker). The bar covers the sampling phase; model loading
@@ -112,7 +145,7 @@ public static class CommandFactory
             // auto-refresh thread getting scheduled. AutoRefresh is disabled and we
             // redraw synchronously from the native progress callback (see
             // SynchronousProgress) — the one thread guaranteed to have the CPU.
-            var result = await AnsiConsole.Progress()
+            await AnsiConsole.Progress()
                 .AutoClear(false)
                 .AutoRefresh(false)
                 .Columns(
@@ -123,43 +156,59 @@ public static class CommandFactory
                     new SpinnerColumn())
                 .StartAsync(async ctx =>
                 {
-                    var task = ctx.AddTask($"Generating ({preset.Key})", autoStart: true, maxValue: request.EffectiveSteps);
+                    for (var i = 0; i < count; i++)
+                    {
+                        // Cancellation can't interrupt an in-flight native GenerateImage,
+                        // but it stops us from starting the next image in a batch.
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            canceled = true;
+                            break;
+                        }
 
-                    var progress = new SynchronousProgress<GenerationProgress>(p =>
-                    {
-                        task.Description = p.Phase == GenerationPhase.LoadingModel
-                            ? $"Loading model ({preset.Key})"
-                            : $"Sampling ({preset.Key})";
-                        task.MaxValue = p.TotalSteps;
-                        task.Value = p.Step;
-                        ctx.Refresh();
-                    });
+                        var request = MakeRequest(baseSeed + i);
+                        var label = count > 1 ? $"{preset.Key} #{i + 1}/{count} (seed {request.Seed})" : preset.Key;
+                        var task = ctx.AddTask($"Generating ({label})", autoStart: true, maxValue: request.EffectiveSteps);
 
-                    var job = queue.Enqueue(request, progress);
-                    try
-                    {
-                        var r = await job.Completion;
-                        task.Value = task.MaxValue;
-                        ctx.Refresh();
-                        return (GenerationResult?)r;
-                    }
-                    catch (Exception ex)
-                    {
-                        ctx.Refresh();
-                        AnsiConsole.MarkupLineInterpolated($"[red]Generation failed:[/] {ex.Message}");
-                        return null;
+                        var progress = new SynchronousProgress<GenerationProgress>(p =>
+                        {
+                            task.Description = p.Phase == GenerationPhase.LoadingModel
+                                ? $"Loading model ({label})"
+                                : $"Sampling ({label})";
+                            task.MaxValue = p.TotalSteps;
+                            task.Value = p.Step;
+                            ctx.Refresh();
+                        });
+
+                        var job = queue.Enqueue(request, progress);
+                        try
+                        {
+                            var res = await job.Completion;
+                            task.Value = task.MaxValue;
+                            ctx.Refresh();
+                            completed++;
+
+                            AnsiConsole.MarkupLineInterpolated($"[green]Saved:[/] {res.OutputPath}");
+                            if (res.PreviewDirectory is { } previewDir)
+                                AnsiConsole.MarkupLineInterpolated($"[grey]Preview frames:[/] {previewDir}");
+                            AnsiConsole.MarkupLineInterpolated(
+                                $"[grey]load {res.LoadSeconds:F1}s + gen {res.GenerationSeconds:F1}s[/]");
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Refresh();
+                            AnsiConsole.MarkupLineInterpolated($"[red]Generation failed (seed {request.Seed}):[/] {ex.Message}");
+                        }
                     }
                 });
 
-            if (result is not { } res)
-                return 2;
+            if (canceled)
+                AnsiConsole.MarkupLineInterpolated(
+                    $"[yellow]Canceled.[/] Completed {completed}/{count} before stopping.");
+            else if (count > 1)
+                AnsiConsole.MarkupLineInterpolated($"[green]Batch done:[/] {completed}/{count} image(s).");
 
-            AnsiConsole.MarkupLineInterpolated($"[green]Saved:[/] {res.OutputPath}");
-            if (res.PreviewDirectory is { } previewDir)
-                AnsiConsole.MarkupLineInterpolated($"[grey]Preview frames:[/] {previewDir}");
-            AnsiConsole.MarkupLineInterpolated(
-                $"[grey]load {res.LoadSeconds:F1}s + gen {res.GenerationSeconds:F1}s[/]");
-            return 0;
+            return completed == 0 ? 2 : 0;
         });
 
         return cmd;
@@ -174,6 +223,7 @@ public static class CommandFactory
         table.AddRow("Model file", Markup.Escape(r.Preset.FileName));
         table.AddRow("Size", $"{r.EffectiveWidth}x{r.EffectiveHeight}");
         table.AddRow("Steps / CFG", $"{r.EffectiveSteps} / {r.EffectiveCfg}");
+        table.AddRow("Sampler / Scheduler", $"{r.Preset.Sampler} / {r.EffectiveScheduler}");
         table.AddRow("Seed / Threads", $"{r.Seed} / {r.EffectiveThreads}");
         table.AddRow("Prompt", Markup.Escape(r.Prompt));
         if (!string.IsNullOrEmpty(r.EffectiveNegativePrompt))

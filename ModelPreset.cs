@@ -15,7 +15,8 @@ public sealed record ModelPreset(
     string DownloadUrl,
     string? NegativePrompt = null,
     string? VaeFileName = null,
-    string? VaeDownloadUrl = null);
+    string? VaeDownloadUrl = null,
+    Scheduler Scheduler = Scheduler.Default);
 
 /// <summary>The built-in model presets, keyed by CLI name.</summary>
 public static class Presets
@@ -55,6 +56,23 @@ public static class Presets
             // you see black/NaN output. Optional otherwise.
             VaeFileName: "sdxl-vae-fp16-fix.safetensors",
             VaeDownloadUrl: "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors"),
+
+        // Full SDXL base (not distilled): real classifier-free guidance and working
+        // negative prompts, at the cost of more steps. On CPU this is a batch/overnight
+        // model. The AYS scheduler makes lower step counts (~12–15) usable; bump Steps
+        // toward 25–40 for full quality if you have the time budget.
+        new(
+            Key: "sdxl",
+            Name: "SDXL Base 1.0",
+            FileName: "sdxl-base.safetensors",
+            Width: 1024, Height: 1024,
+            Steps: 15, Cfg: 6.0f,
+            Sampler: Sampler.DPMPP2M,
+            DownloadUrl: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
+            NegativePrompt: "blurry, low quality, distorted, deformed",
+            VaeFileName: "sdxl-vae-fp16-fix.safetensors",
+            VaeDownloadUrl: "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors",
+            Scheduler: Scheduler.AYS),
     ];
 
     public static readonly IReadOnlyList<string> Keys = All.Select(p => p.Key).ToArray();

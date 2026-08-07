@@ -12,6 +12,7 @@ public sealed record GenerationRequest
     public int? Height { get; init; }
     public int? Steps { get; init; }
     public float? Cfg { get; init; }
+    public Scheduler? Scheduler { get; init; }
     public long Seed { get; init; } = 42;
     public int? Threads { get; init; }
     public string? OutputPath { get; init; }
@@ -32,6 +33,7 @@ public sealed record GenerationRequest
     public int EffectiveHeight => Height ?? Preset.Height;
     public int EffectiveSteps => Steps ?? Preset.Steps;
     public float EffectiveCfg => Cfg ?? Preset.Cfg;
+    public Scheduler EffectiveScheduler => Scheduler ?? Preset.Scheduler;
     public int EffectiveThreads => Threads ?? Environment.ProcessorCount;
     public string EffectiveNegativePrompt => NegativePrompt ?? Preset.NegativePrompt ?? "";
 

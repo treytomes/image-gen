@@ -53,7 +53,16 @@ await host.StartAsync();
 try
 {
     var rootCommand = CommandFactory.Build(host.Services);
-    return await rootCommand.Parse(args).InvokeAsync();
+
+    // On Ctrl-C, System.CommandLine cancels the action's token, then force-terminates
+    // after this timeout. A single native GenerateImage call can't be interrupted
+    // mid-run, so we allow generous time for the in-flight image to finish and save
+    // before the process is killed — the token stops *further* batch jobs from starting.
+    var invocation = new InvocationConfiguration
+    {
+        ProcessTerminationTimeout = TimeSpan.FromMinutes(20),
+    };
+    return await rootCommand.Parse(args).InvokeAsync(invocation);
 }
 catch (Exception ex)
 {

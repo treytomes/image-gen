@@ -65,12 +65,15 @@ delegate. So:
 - We **can**: emit live preview frames at an interval and let the user watch progress.
 - We **cannot** (without a bigger change): truly pause at step N, inspect, then resume
   the *same* latent. No resume entry point exists.
-- Early cancellation is **uncertain**: since `GenerateImage` takes no token, aborting
-  mid-run likely isn't possible cleanly — cancellation probably only takes effect
-  between jobs. NEEDS A RUNTIME TEST to confirm (see step 4).
+- Early cancellation **confirmed impossible mid-run**: a runtime test throwing
+  `OperationCanceledException` from the `Progress` callback showed the exception is
+  **swallowed** — generation continued to completion and the process only stopped at a
+  timeout. So a single in-flight `GenerateImage` cannot be interrupted from managed code.
 
-So the honest, shippable scope is **"watch it form + optionally kill the run"**, not
-pause/resume.
+So the honest, shippable scope is **"watch it form + stop between images"**, not
+pause/resume or mid-image abort. **SHIPPED:** `generate --count <N>` runs a batch;
+Ctrl-C (via System.CommandLine's token, with `ProcessTerminationTimeout` raised to 20
+min in Program.cs so the current image finishes) stops the batch before the next image.
 
 ### Proposed first step (spike) — low risk, most plumbing already exists
 

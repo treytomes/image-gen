@@ -40,11 +40,18 @@ files in `./models` (or set `MODELS_DIR` to another folder); single-file
 | `sd15` | `sd-v1-5.safetensors` | [Hugging Face: stable-diffusion-v1-5-archive](https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive) |
 | `sdturbo` | `sd-turbo.safetensors` | [Hugging Face: stabilityai/sd-turbo](https://huggingface.co/stabilityai/sd-turbo) |
 | `sdxlturbo` | `sdxl-turbo.safetensors` | [Hugging Face: stabilityai/sdxl-turbo](https://huggingface.co/stabilityai/sdxl-turbo) |
+| `sdxl` | `sdxl-base.safetensors` | [Hugging Face: stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) |
 
-For SDXL Turbo, a fixed fp16 VAE (`sdxl-vae-fp16-fix.safetensors`, from
+`sdxl` is the **full SDXL base model** (not distilled): real classifier-free
+guidance and working negative prompts, at the cost of more steps. On a CPU it's a
+batch/overnight model (~13+ min/image at its 15-step default). The preset uses the
+**AYS** scheduler so lower step counts stay usable; raise `--steps` toward 25–40
+for full quality if you have the time.
+
+Both SDXL presets use a fixed fp16 VAE (`sdxl-vae-fp16-fix.safetensors`, from
 [madebyollin/sdxl-vae-fp16-fix](https://huggingface.co/madebyollin/sdxl-vae-fp16-fix))
-is picked up automatically and avoids occasional black/NaN output. The
-`download` command pulls it alongside the `sdxlturbo` model.
+that is picked up automatically and avoids occasional black/NaN output. The
+`download` command pulls it alongside the SDXL models.
 
 Filenames and source URLs are defined in `Presets.All` in
 [ModelPreset.cs](ModelPreset.cs) — adjust there if yours differ (e.g. a
@@ -63,6 +70,12 @@ dotnet run -- generate sdturbo "a red fox in a snowy forest"
 dotnet run -- generate sd15 "a lighthouse at dusk" --seed 7 --steps 25 --cfg 7.5 --size 512x768
 dotnet run -- generate sdxlturbo "studio portrait of a robot" --out robot.png
 
+# Full SDXL base with a scheduler override and more steps
+dotnet run -- generate sdxl "an ornate steampunk airship" --steps 30 --scheduler Karras
+
+# Batch: generate 10 images overnight, incrementing the seed each time
+dotnet run -- generate sdxl "a red fox in a snowy forest" --count 10
+
 # Help for any command
 dotnet run -- generate --help
 ```
@@ -70,6 +83,20 @@ dotnet run -- generate --help
 When `--out` is omitted, output PNGs are written to a timestamped file under
 `out/` — e.g. `out/sd15-20260806-145000-seed42.png` — so successive runs don't
 overwrite each other.
+
+### Batch generation and stopping early
+
+`--count <N>` generates N images in one run, incrementing the seed each time
+(`--seed` sets the starting seed). Each image is saved as it completes, so a batch
+left running overnight yields results incrementally. `--out` is ignored for
+batches (names would collide); timestamped per-seed names are used instead.
+
+Press **Ctrl-C** to stop early. Because a single image is one uninterruptible
+native call, cancellation cannot abort the image currently rendering — it finishes
+and is saved — but no further images in the batch are started. This is ideal for
+"queue a pile, stop once I see one I like in the preview frames." The process is
+given up to 20 minutes after Ctrl-C for the in-flight image to finish before it is
+force-terminated.
 
 ### Watching an image form (preview frames)
 

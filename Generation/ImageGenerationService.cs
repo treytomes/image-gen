@@ -171,6 +171,7 @@ public sealed class ImageGenerationService(
         p.Seed = request.Seed;
         p.SampleParameter.SampleSteps = request.EffectiveSteps;
         p.SampleParameter.SampleMethod = request.Preset.Sampler;
+        p.SampleParameter.Scheduler = request.EffectiveScheduler;
         p.SampleParameter.Guidance.TxtCfg = request.EffectiveCfg;
         return p;
     }
