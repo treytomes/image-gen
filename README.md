@@ -91,12 +91,18 @@ overwrite each other.
 left running overnight yields results incrementally. `--out` is ignored for
 batches (names would collide); timestamped per-seed names are used instead.
 
-Press **Ctrl-C** to stop early. Because a single image is one uninterruptible
-native call, cancellation cannot abort the image currently rendering — it finishes
-and is saved — but no further images in the batch are started. This is ideal for
-"queue a pile, stop once I see one I like in the preview frames." The process is
-given up to 20 minutes after Ctrl-C for the in-flight image to finish before it is
-force-terminated.
+**Stopping early — Ctrl-C.** A single image is one uninterruptible native call, so
+cancellation can't abort the image currently rendering. Ctrl-C is therefore
+two-stage:
+
+- **First Ctrl-C** — the image currently rendering finishes and is saved, but no
+  further images in a batch are started. Ideal for "queue a pile, stop once I see
+  one I like in the preview frames."
+- **Second Ctrl-C** — quit immediately, discarding the in-flight image.
+
+So for a single-image run, one Ctrl-C prints a notice and waits for that image
+(press again to quit now); for a batch, one Ctrl-C ends it cleanly after the
+current image while keeping everything already saved.
 
 ### Watching an image form (preview frames)
 

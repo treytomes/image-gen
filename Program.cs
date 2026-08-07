@@ -52,17 +52,44 @@ using var host = builder.Build();
 await host.StartAsync();
 try
 {
+    // Ctrl-C handling. A single native GenerateImage call cannot be interrupted
+    // mid-run (verified: exceptions thrown from its callbacks are swallowed). We own
+    // the signal end-to-end rather than relying on System.CommandLine's handler, so
+    // the behavior is unambiguous:
+    //   1st Ctrl-C — cancel our token (a batch stops before its next image) and tell
+    //                the user the current image must finish. e.Cancel = true keeps the
+    //                process alive so that can happen.
+    //   2nd Ctrl-C — quit immediately via Environment.Exit. The event fires on a
+    //                runtime thread independent of the main thread, so this works even
+    //                while the main thread is blocked inside the native call.
+    using var cancellation = new CancellationTokenSource();
+    var ctrlCPresses = 0;
+    Console.CancelKeyPress += (_, e) =>
+    {
+        if (Interlocked.Increment(ref ctrlCPresses) == 1)
+        {
+            e.Cancel = true;
+            cancellation.Cancel();
+            Console.Error.WriteLine();
+            Console.Error.WriteLine(
+                "Stopping. The image currently rendering can't be interrupted and will " +
+                "finish first (this may take a while). A batch will stop before its next " +
+                "image. Press Ctrl-C again to quit immediately and discard it.");
+        }
+        else
+        {
+            Console.Error.WriteLine("Quitting immediately.");
+            Environment.Exit(130); // 128 + SIGINT, conventional for Ctrl-C
+        }
+    };
+
     var rootCommand = CommandFactory.Build(host.Services);
 
-    // On Ctrl-C, System.CommandLine cancels the action's token, then force-terminates
-    // after this timeout. A single native GenerateImage call can't be interrupted
-    // mid-run, so we allow generous time for the in-flight image to finish and save
-    // before the process is killed — the token stops *further* batch jobs from starting.
-    var invocation = new InvocationConfiguration
-    {
-        ProcessTerminationTimeout = TimeSpan.FromMinutes(20),
-    };
-    return await rootCommand.Parse(args).InvokeAsync(invocation);
+    // Disable System.CommandLine's own Ctrl-C handling (ProcessTerminationTimeout:
+    // null) so it doesn't race our handler; our CancellationTokenSource drives
+    // cancellation instead.
+    var invocation = new InvocationConfiguration { ProcessTerminationTimeout = null };
+    return await rootCommand.Parse(args).InvokeAsync(invocation, cancellation.Token);
 }
 catch (Exception ex)
 {

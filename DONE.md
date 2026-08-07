@@ -36,11 +36,23 @@ is saved as it completes. Ctrl-C stops the batch between images.
 Finding — **a single in-flight `GenerateImage` cannot be interrupted**: a runtime
 test throwing `OperationCanceledException` from the `Progress` callback showed the
 exception is swallowed and generation runs to completion. So mid-image abort is
-impossible from managed code. Consequences, as shipped:
-- `ProcessTerminationTimeout` is raised to 20 min in `Program.cs` so the current
-  image finishes and saves before the process is force-terminated.
-- Cancellation only stops the *next* image in a batch from starting — ideal for
-  "queue a pile, stop once a preview looks good."
+impossible from managed code. Ctrl-C handling (in `Program.cs`) is therefore
+**two-stage**, and we own the signal directly rather than via System.CommandLine:
+- We set `InvocationConfiguration.ProcessTerminationTimeout = null`, which (verified
+  by reflection: the `ProcessTerminationHandler` is only constructed when the timeout
+  has a value) disables SCL's own Ctrl-C handling so it can't race ours.
+- A `Console.CancelKeyPress` handler drives a `CancellationTokenSource` passed to the
+  command tree. **1st press:** cancel the token (a batch stops before its next image),
+  print a notice, `e.Cancel = true` to stay alive so the current image finishes.
+  **2nd press:** `Environment.Exit(130)` — instant, and works even while the main
+  thread is blocked in the native call because the event fires on its own thread.
+- Superseded an earlier attempt that raised `ProcessTerminationTimeout` to 20 min;
+  that made a single-image Ctrl-C appear frozen (no feedback, ~unbounded wait) since
+  nothing checks the token mid-image. The two-stage handler fixes that.
+
+**Note:** the two-stage Ctrl-C flow could not be runtime-verified in the dev shell
+(it can't deliver a real console SIGINT). Verified instead: `null` disables SCL's
+handler, `CancelKeyPress` fires off-thread, and the no-Ctrl-C happy path is intact.
 
 ## Scheduler exposure (and CFG-scheduling research — parked)
 
