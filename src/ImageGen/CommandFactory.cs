@@ -249,8 +249,11 @@ public static class CommandFactory
                 if (count > 1)
                     AnsiConsole.MarkupLine("[yellow]--repl is ignored with --count > 1.[/]");
                 else if (!canceled && last is { } seed)
+                {
+                    var refinement = services.GetRequiredService<IOptions<ImageGenOptions>>().Value.Refinement;
                     await RunRefinementLoopAsync(
-                        preset, seed, MakeRequest(baseSeed).Strength, RunOneAsync, cancellationToken);
+                        preset, seed, MakeRequest(baseSeed).Strength, refinement, RunOneAsync, cancellationToken);
+                }
             }
 
             return completed == 0 ? 2 : 0;
@@ -286,12 +289,18 @@ public static class CommandFactory
         ModelPreset preset,
         GenerationResult seed,
         float initialStrength,
+        RefinementOptions options,
         Func<GenerationRequest, string, Task<GenerationResult?>> runOne,
         CancellationToken cancellationToken)
     {
+        // Refinement uses its own step count (strength ~= fraction of steps that run,
+        // so a preset's few-step default gives strength almost no resolution).
+        var steps = options.Steps > 0 ? options.Steps : preset.Steps;
+
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold]Refinement mode.[/] Enter a prompt to refine the image; each " +
             "refines the previous result. Empty prompt, [grey]exit[/], or [grey]Ctrl-C[/] to quit.");
+        AnsiConsole.MarkupLineInterpolated($"[grey]Using {steps} steps per round.[/]");
 
         var currentImage = seed.OutputPath;
         var strength = initialStrength;
@@ -317,6 +326,14 @@ public static class CommandFactory
                         .DefaultValue(strength)
                         .Validate(v => v is >= 0f and <= 1f, "[red]strength must be between 0 and 1[/]"),
                     cancellationToken);
+
+                // Warn when strength has too few effective steps to resolve: strength
+                // scales the steps that run, so strength x steps below the threshold
+                // means the knob is coarse (jumps abruptly rather than blending).
+                var effective = strength * steps;
+                if (options.CoarseStrengthStepThreshold > 0 && effective < options.CoarseStrengthStepThreshold)
+                    AnsiConsole.MarkupLineInterpolated(
+                        $"[yellow]  note:[/] [grey]~{effective:F1} effective steps — strength control is coarse here; raise ImageGen:Refinement:Steps for finer blending.[/]");
             }
             catch (OperationCanceledException)
             {
@@ -336,6 +353,7 @@ public static class CommandFactory
                 Prompt = prompt,
                 InitImagePath = currentImage,
                 Strength = strength,
+                Steps = steps,
             };
 
             var result = await runOne(request, $"{preset.Key} refine");

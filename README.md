@@ -153,6 +153,16 @@ saved as its own timestamped file, and the next round builds on the most recent
 one. Leave with an empty prompt, `exit`/`quit`, or **Ctrl-C**. Requires an
 interactive terminal and a single image (ignored with `--count > 1`).
 
+**Strength resolution and step count.** In image-to-image, strength effectively
+scales how many sampling steps run (`effective ≈ strength × steps`). With a
+preset's few-step default (SD Turbo uses 2), strength collapses to only ~2
+outcomes and feels like an on/off switch. The REPL therefore uses its own higher
+step count — configurable via `ImageGen:Refinement:Steps` (default 20) in
+[appsettings.yaml](src/ImageGen/appsettings.yaml) — so strength blends smoothly.
+If a round's effective steps fall below `ImageGen:Refinement:CoarseStrengthStepThreshold`
+(default 4), the REPL notes that strength control is coarse. Raising `Steps` gives
+finer control at the cost of longer rounds.
+
 ### Batch generation and stopping early
 
 `--count <N>` generates N images in one run, incrementing the seed each time
@@ -358,6 +368,10 @@ That's why the practical advice is what it is:
   configuration provider.
   - `ImageGen:ModelsDir` — where model files live (default `models`).
   - `ImageGen:DownloadWorkerCount` — concurrent downloads (default `2`, min `1`).
+  - `ImageGen:Refinement:Steps` — sampling steps per `--repl` refinement round
+    (default `20`); higher gives finer strength control, slower rounds.
+  - `ImageGen:Refinement:CoarseStrengthStepThreshold` — warn when a round's
+    effective steps fall below this (default `4`; `0` disables the hint).
 - Config can be overridden by environment variables prefixed `IMAGEGEN_`
   (e.g. `IMAGEGEN_ImageGen__ModelsDir=/data/models`,
   `IMAGEGEN_ImageGen__DownloadWorkerCount=4`). `MODELS_DIR` is also honored.

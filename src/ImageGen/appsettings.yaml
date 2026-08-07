@@ -2,6 +2,19 @@ ImageGen:
   ModelsDir: models
   DownloadWorkerCount: 2
 
+  # Interactive refinement loop (generate --repl). Refinement is image-to-image,
+  # where strength effectively scales how many sampling steps run
+  # (effective ~= strength x steps). With a preset's few-step default (e.g. SD
+  # Turbo's 2 steps) strength collapses to ~2 outcomes and feels like an on/off
+  # switch, so the REPL uses its own higher step count for finer control.
+  Refinement:
+    # Sampling steps per refinement round (overrides the preset default). Higher =
+    # smoother strength control but slower per round. <= 0 falls back to the preset.
+    Steps: 20
+    # If a round's effective steps (strength x steps) drop below this, the REPL
+    # warns that strength control is coarse. Set to 0 to disable the hint.
+    CoarseStrengthStepThreshold: 4
+
 Serilog:
   MinimumLevel:
     Default: Information

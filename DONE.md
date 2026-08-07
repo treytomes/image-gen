@@ -142,3 +142,18 @@ previous output via img2img, chaining toward a result. Opt-in, single-image only
   real Ctrl-C). Verified instead: base-generate → REPL entry/banner, the
   non-interactive graceful-exit path, and that a standalone `--init` refine at the
   loop's exact parameters produces a valid chained image.
+
+### Strength resolution fix (configurable refinement steps)
+
+Symptom reported: img2img strength felt like an on/off switch — <0.5 did nothing,
+>0.5 changed everything. Cause: strength effectively scales how many steps run
+(`effective ≈ strength × steps`), so a preset's few-step default (SD Turbo = 2)
+gives strength only ~2 distinct outcomes. Confirmed empirically: at fixed strength
+0.4, divergence from source differed between 4 steps (21.6/px) and 20 steps
+(29.3/px), showing step count is a real lever on the result.
+
+Fix: the REPL uses its own step count (`RefinementOptions.Steps`, default 20)
+instead of the preset default, and warns when a round's effective steps drop below
+`CoarseStrengthStepThreshold` (default 4). Both live in `appsettings.yaml` under
+`ImageGen:Refinement`, documented inline and in the README. Verified the YAML binds
+(Steps=20, threshold=4).
