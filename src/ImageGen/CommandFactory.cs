@@ -77,11 +77,16 @@ public static class CommandFactory
             DefaultValueFactory = _ => "tae",
         };
         previewModeOpt.AcceptOnlyFromAmong("tae", "vae", "proj");
+        var replOpt = new Option<bool>("--repl")
+        {
+            Description = "After generating, enter an interactive loop to refine the result with " +
+                          "further prompts (each refines the previous output via img2img). Ignored with --count.",
+        };
 
         var cmd = new Command("generate", "Generate an image from a text prompt.")
         {
             presetArg, promptArg, outOpt, seedOpt, stepsOpt, cfgOpt, negOpt, threadsOpt, sizeOpt,
-            initOpt, strengthOpt, schedulerOpt, countOpt, previewOpt, previewModeOpt,
+            initOpt, strengthOpt, schedulerOpt, countOpt, previewOpt, previewModeOpt, replOpt,
         };
 
         cmd.SetAction(async (parseResult, cancellationToken) =>
@@ -149,42 +154,29 @@ public static class CommandFactory
                     $"[grey]Batch of {count}, seeds {baseSeed}–{baseSeed + count - 1}. Ctrl-C stops after the current image.[/]");
 
             var queue = services.GetRequiredService<GenerationQueue>();
-            var completed = 0;
-            var canceled = false;
 
-            // A live progress bar driven by the engine's step-progress hook (via the
-            // background worker). The bar covers the sampling phase; model loading
-            // shows as an indeterminate spinner before the first step arrives.
+            // Runs a single request under a live progress bar and returns its result,
+            // or null on failure. The bar is driven by the engine's step-progress hook.
             //
             // Generation saturates every CPU core, so we can't rely on Spectre's
             // auto-refresh thread getting scheduled. AutoRefresh is disabled and we
             // redraw synchronously from the native progress callback (see
             // SynchronousProgress) — the one thread guaranteed to have the CPU.
-            await AnsiConsole.Progress()
-                .AutoClear(false)
-                .AutoRefresh(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new RemainingTimeColumn(),
-                    new SpinnerColumn())
-                .StartAsync(async ctx =>
-                {
-                    for (var i = 0; i < count; i++)
+            async Task<GenerationResult?> RunOneAsync(GenerationRequest request, string label)
+            {
+                GenerationResult? result = null;
+                await AnsiConsole.Progress()
+                    .AutoClear(false)
+                    .AutoRefresh(false)
+                    .Columns(
+                        new TaskDescriptionColumn(),
+                        new ProgressBarColumn(),
+                        new PercentageColumn(),
+                        new RemainingTimeColumn(),
+                        new SpinnerColumn())
+                    .StartAsync(async ctx =>
                     {
-                        // Cancellation can't interrupt an in-flight native GenerateImage,
-                        // but it stops us from starting the next image in a batch.
-                        if (cancellationToken.IsCancellationRequested)
-                        {
-                            canceled = true;
-                            break;
-                        }
-
-                        var request = MakeRequest(baseSeed + i);
-                        var label = count > 1 ? $"{preset.Key} #{i + 1}/{count} (seed {request.Seed})" : preset.Key;
                         var task = ctx.AddTask($"Generating ({label})", autoStart: true, maxValue: request.EffectiveSteps);
-
                         var progress = new SynchronousProgress<GenerationProgress>(p =>
                         {
                             task.Description = p.Phase == GenerationPhase.LoadingModel
@@ -201,27 +193,65 @@ public static class CommandFactory
                             var res = await job.Completion;
                             task.Value = task.MaxValue;
                             ctx.Refresh();
-                            completed++;
-
-                            AnsiConsole.MarkupLineInterpolated($"[green]Saved:[/] {res.OutputPath}");
-                            if (res.PreviewDirectory is { } previewDir)
-                                AnsiConsole.MarkupLineInterpolated($"[grey]Preview frames:[/] {previewDir}");
-                            AnsiConsole.MarkupLineInterpolated(
-                                $"[grey]load {res.LoadSeconds:F1}s + gen {res.GenerationSeconds:F1}s[/]");
+                            result = res;
                         }
                         catch (Exception ex)
                         {
                             ctx.Refresh();
                             AnsiConsole.MarkupLineInterpolated($"[red]Generation failed (seed {request.Seed}):[/] {ex.Message}");
                         }
-                    }
-                });
+                    });
+
+                if (result is { } r)
+                {
+                    AnsiConsole.MarkupLineInterpolated($"[green]Saved:[/] {r.OutputPath}");
+                    if (r.PreviewDirectory is { } previewDir)
+                        AnsiConsole.MarkupLineInterpolated($"[grey]Preview frames:[/] {previewDir}");
+                    AnsiConsole.MarkupLineInterpolated(
+                        $"[grey]load {r.LoadSeconds:F1}s + gen {r.GenerationSeconds:F1}s[/]");
+                }
+                return result;
+            }
+
+            var completed = 0;
+            var canceled = false;
+            GenerationResult? last = null;
+
+            for (var i = 0; i < count; i++)
+            {
+                // Cancellation can't interrupt an in-flight native GenerateImage,
+                // but it stops us from starting the next image in a batch.
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    canceled = true;
+                    break;
+                }
+
+                var request = MakeRequest(baseSeed + i);
+                var label = count > 1 ? $"{preset.Key} #{i + 1}/{count} (seed {request.Seed})" : preset.Key;
+                if (await RunOneAsync(request, label) is { } res)
+                {
+                    completed++;
+                    last = res;
+                }
+            }
 
             if (canceled)
                 AnsiConsole.MarkupLineInterpolated(
                     $"[yellow]Canceled.[/] Completed {completed}/{count} before stopping.");
             else if (count > 1)
                 AnsiConsole.MarkupLineInterpolated($"[green]Batch done:[/] {completed}/{count} image(s).");
+
+            // Interactive refinement loop (single-image runs only). Each prompt refines
+            // the previous output via img2img.
+            if (parseResult.GetValue(replOpt))
+            {
+                if (count > 1)
+                    AnsiConsole.MarkupLine("[yellow]--repl is ignored with --count > 1.[/]");
+                else if (!canceled && last is { } seed)
+                    await RunRefinementLoopAsync(
+                        preset, seed, MakeRequest(baseSeed).Strength, RunOneAsync, cancellationToken);
+            }
 
             return completed == 0 ? 2 : 0;
         });
@@ -247,6 +277,73 @@ public static class CommandFactory
         if (!string.IsNullOrEmpty(r.EffectiveNegativePrompt))
             table.AddRow("Negative", Markup.Escape(r.EffectiveNegativePrompt));
         AnsiConsole.Write(table);
+    }
+
+    /// <summary>Interactive refinement loop: repeatedly prompts for a refinement prompt
+    /// and strength, running each as an img2img from the previous output. Exits on an
+    /// empty prompt, "exit"/"quit", or Ctrl-C.</summary>
+    private static async Task RunRefinementLoopAsync(
+        ModelPreset preset,
+        GenerationResult seed,
+        float initialStrength,
+        Func<GenerationRequest, string, Task<GenerationResult?>> runOne,
+        CancellationToken cancellationToken)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Refinement mode.[/] Enter a prompt to refine the image; each " +
+            "refines the previous result. Empty prompt, [grey]exit[/], or [grey]Ctrl-C[/] to quit.");
+
+        var currentImage = seed.OutputPath;
+        var strength = initialStrength;
+
+        while (true)
+        {
+            string prompt;
+            try
+            {
+                prompt = await AnsiConsole.PromptAsync(
+                    new TextPrompt<string>("[green]refine[/]>")
+                        .AllowEmpty(),
+                    cancellationToken);
+
+                if (string.IsNullOrWhiteSpace(prompt) ||
+                    prompt.Trim() is "exit" or "quit")
+                    break;
+
+                // Strength persists across rounds: the last value is the default, so
+                // pressing Enter reuses it. Validated to [0,1].
+                strength = await AnsiConsole.PromptAsync(
+                    new TextPrompt<float>("  strength")
+                        .DefaultValue(strength)
+                        .Validate(v => v is >= 0f and <= 1f, "[red]strength must be between 0 and 1[/]"),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Ctrl-C at a prompt: leave the loop cleanly.
+                break;
+            }
+            catch (InvalidOperationException)
+            {
+                // No interactive console (e.g. stdin redirected/piped). Can't refine.
+                AnsiConsole.MarkupLine("[yellow]Refinement mode needs an interactive terminal; skipping.[/]");
+                break;
+            }
+
+            var request = new GenerationRequest
+            {
+                Preset = preset,
+                Prompt = prompt,
+                InitImagePath = currentImage,
+                Strength = strength,
+            };
+
+            var result = await runOne(request, $"{preset.Key} refine");
+            if (result is { } r)
+                currentImage = r.OutputPath; // chain: next refinement builds on this one
+        }
+
+        AnsiConsole.MarkupLine("[grey]Left refinement mode.[/]");
     }
 
     private static Command BuildListCommand()

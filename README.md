@@ -130,6 +130,29 @@ dotnet run -- generate sd15 "an oil painting of a fox" --init photo.png --streng
 - Works with any preset. Combine with `--count` for a strength/seed sweep, or
   `--preview` to watch the edit converge.
 
+### Interactive refinement (`--repl`)
+
+`--repl` drops you into a refinement loop after the first image is generated. Each
+prompt you enter reworks the *previous* output via img2img, so you can iterate
+toward a result conversationally:
+
+```bash
+dotnet run -- generate sdturbo "a red fox in a snowy forest" --repl
+# ... first image generates, then:
+# refine> make the sky more dramatic
+#   strength [0.75]: 0.5
+# ... refined image generates from the previous one ...
+# refine> add falling snow
+#   strength [0.5]:            (Enter reuses 0.5)
+# refine>                      (empty, "exit", or Ctrl-C to quit)
+```
+
+Each round prompts for the text and then a **strength** (0–1); the strength
+defaults to the last value used, so pressing Enter reuses it. Every refinement is
+saved as its own timestamped file, and the next round builds on the most recent
+one. Leave with an empty prompt, `exit`/`quit`, or **Ctrl-C**. Requires an
+interactive terminal and a single image (ignored with `--count > 1`).
+
 ### Batch generation and stopping early
 
 `--count <N>` generates N images in one run, incrementing the seed each time
@@ -225,6 +248,7 @@ rest wait in the queue.
 | `--count`, `-c` `<n>` | Generate N images, incrementing the seed |
 | `--preview <n>` | Save a preview frame every N steps (0 = off) |
 | `--preview-mode <m>` | Preview decoder: `tae` (default), `vae`, `proj` |
+| `--repl` | After generating, refine the result interactively (single image only) |
 | `--threads <n>` | CPU thread count (default: all cores) |
 
 ### Parameters explained

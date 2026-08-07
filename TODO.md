@@ -14,32 +14,24 @@ capabilities the wrapper exposes, in rough order of CPU practicality.
 **Verdict after research (StableDiffusion.NET 7.0.0, verified by reflection):
 img2img / inpaint / ControlNet are practical on CPU with the SD 1.5 / SDXL weights
 we already have; reference-image and PhotoMaker need extra weights and specific
-model support. ALL five share one hard prerequisite (see below).**
+model support.**
 
-### Shared prerequisite: a PNG *decoder* — DONE
-
-Every editing mode takes an input image as `HPPH.IImage`, built via
-`HPPH.Image<ColorRGB>.Create(buffer, w, h)` from raw RGB — the library has no image
-loader of its own. That decoder now exists: **`Png.Load` / `Png.Decode`** in
-`ImageGen.Imaging` (behind `IImageCodec`), decoding 8-bit non-interlaced RGB/RGBA
-with all five scanline filters. Covered by fixture tests (one per filter + RGBA,
-Pillow-validated). See [DONE.md](DONE.md). So editing work can now start directly at
-img2img; each mode below just needs to load its input image(s) via the codec and
-hand the raw pixels to `HPPH.Image<ColorRGB>.Create`.
+**Prerequisites, both DONE (see [DONE.md](DONE.md)):**
+- **PNG decoder** — `Png.Load` / `Png.Decode` behind `IImageCodec`; loads input
+  images as raw RGB, wrapped for the native lib via `HPPH.Image<ColorRGB>.Create`.
+- **img2img (3a)** — `generate --init <png> --strength <f>`. The pattern the
+  remaining modes follow: load input via the codec, set the relevant
+  `ImageGenerationParameter` field.
 
 ### The API, verified
 
 All on `ImageGenerationParameter` (with fluent `With*` extension helpers):
-`InitImage`, `Strength`, `MaskImage`, `RefImages` + `AutoResizeRefImage` +
-`IncreaseRefIndex`, `ControlNet` (`ControlNetParameter { Image, Strength }`),
+`InitImage`, `Strength` (used by img2img), `MaskImage`, `RefImages` +
+`AutoResizeRefImage` + `IncreaseRefIndex`, `ControlNet`
+(`ControlNetParameter { Image, Strength }`),
 `PhotoMaker` (`PhotoMakerParameter { IdImages, IdEmbedPath, StyleStrength }`).
-There is a static `ImageGenerationParameter.ImageToImage(prompt, image)` factory
-paralleling `TextToImage`. Some modes also need model-load-time paths on
-`DiffusionModelParameter`: `ControlNetPath`, `StackedIdEmbeddingsDirectory`.
-
-### 3a. img2img — `InitImage` + `Strength`  ✅ SHIPPED
-
-Done — `generate --init <png> --strength <f>`. See [DONE.md](DONE.md).
+Some modes also need model-load-time paths on `DiffusionModelParameter`:
+`ControlNetPath`, `StackedIdEmbeddingsDirectory`.
 
 ### 3b. inpaint — `MaskImage`  [CPU: easy — do next]
 

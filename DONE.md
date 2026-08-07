@@ -119,3 +119,26 @@ the five editing modes (see TODO.md for the rest).
 - Verified end-to-end: strength 0.3 → mean 3.8/px diff from the source (subtle),
   0.8 → 55.4/px (heavy divergence) — confirming `Strength` behaves as intended, not
   just that it runs.
+
+## Interactive refinement REPL
+
+`generate --repl` drops into a loop after the first image: each prompt refines the
+previous output via img2img, chaining toward a result. Opt-in, single-image only
+(ignored with `--count > 1`).
+
+- Each round: a Spectre `TextPrompt<string>` for the prompt, then a
+  `TextPrompt<float>` for strength that **defaults to the last value** (Enter reuses
+  it) and validates 0–1 — the answer to "how to set strength in the REPL." Each
+  refinement saves its own timestamped file; the next round uses it as the init image.
+- Reuses the same `RunOneAsync` progress-bar path and the `IImageCodec`/img2img
+  chain — no new generation logic.
+- **Ctrl-C** exits the loop cleanly: the global handler cancels the token, which
+  `PromptAsync(..., cancellationToken)` surfaces as `OperationCanceledException`
+  (caught). Empty prompt or `exit`/`quit` also leaves.
+- **Robustness:** Spectre's prompts throw `InvalidOperationException` on
+  non-interactive stdin (piped/CI); caught and reported ("needs an interactive
+  terminal; skipping") rather than crashing.
+- **Not runtime-verified interactively** (the dev shell can't drive a live prompt or
+  real Ctrl-C). Verified instead: base-generate → REPL entry/banner, the
+  non-interactive graceful-exit path, and that a standalone `--init` refine at the
+  loop's exact parameters produces a valid chained image.
