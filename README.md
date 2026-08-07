@@ -213,6 +213,60 @@ guidance is effectively off, so **the negative prompt has little to no effect**;
 it only meaningfully applies to SD 1.5. `sd15` supplies a default negative prompt
 (`blurry, low quality, distorted`); passing `--negative` replaces it.
 
+## How diffusion works (and how to read the preview frames)
+
+A quick mental model — enough to make the parameters and the artifacts you'll see
+make sense.
+
+### The one-paragraph version
+
+A diffusion model is trained by taking real images, progressively adding random
+noise until they're pure static, and learning to **reverse** that process one small
+step at a time. To generate, it starts from a field of pure noise and, over a
+number of **steps**, repeatedly predicts "what did this look like with slightly less
+noise?" — nudging the image toward something coherent. Your **prompt** conditions
+every prediction; **CFG** controls how hard each prediction is pulled toward the
+prompt (see [Parameters explained](#parameters-explained)). It doesn't work on
+pixels directly but on a compressed *latent*, which a decoder turns into the final
+image — that decode is what makes preview frames costly (see
+[preview frames](#watching-an-image-form-preview-frames)).
+
+### Structure is decided early, detail late
+
+The crucial thing to internalize: **global structure is committed in the first
+few steps, and later steps only refine it.** From the initial noise the model
+quickly roughs out "a mass here, a limb there, horizon about here" — and every
+subsequent step treats that layout as the thing to *sharpen*, not to *reconsider*.
+This is exactly what the preview frames show: flip through them and you'll see the
+composition lock in almost immediately, then sharpen over the remaining steps.
+
+That's why the practical advice is what it is:
+
+- **If the early frames show bad structure, the run is usually doomed.** Extra
+  limbs, duplicated subjects, or a wrong composition that appears in the first few
+  frames rarely gets fixed later — the model refines the mistake rather than
+  removing it. Kill the batch (Ctrl-C) and reseed. A different `--seed` rolls a
+  different initial noise field and therefore a different early layout; this is the
+  single most effective fix, and it's what `--count` is built for — batch many seeds
+  and keep the good ones.
+- **More steps ≠ more quality.** Past a model's sweet spot, extra steps do nothing
+  useful and can actively degrade the image (colors oversaturating, detail smearing)
+  as it drifts into inputs it was never trained on. This is especially sharp for the
+  **Turbo** models: they are *distilled* to converge in 1–4 giant steps, so a
+  50- or 100-step Turbo run will peak early and then get *worse*. Match steps to the
+  model (Turbo: 1–4; SD 1.5: ~20; SDXL base: 25–40).
+
+### Distilled (Turbo) vs. full models, in these terms
+
+- **Turbo** models trade deliberation for speed: they commit to a structure and do
+  minimal refinement, so they're fast but **can't course-correct** a bad early
+  layout within their tiny step budget (the "extra arms that merge but never
+  resolve" effect). CFG is baked to ≈1, so negative prompts barely bite.
+- **Full models** (`sd15`, `sdxl`) take many steps with real guidance, giving them
+  more chances to renegotiate structure and honor a negative prompt like
+  `extra limbs, deformed`. When you need the model to *fix its own mistakes* rather
+  than just render fast, reach for `sdxl` at 25–40 steps — not a Turbo preset.
+
 ## Configuration & logging
 
 - `appsettings.yaml` holds the models directory, download worker count, and the
