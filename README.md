@@ -27,6 +27,31 @@ since it is CPU/GPU-bound and holds the model in memory.
   For NVIDIA GPUs, swap it for `StableDiffusion.NET.Backend.Cuda` in the `.csproj`.
 - Model weight files (see below) — not committed; they're large.
 
+## Project layout
+
+The solution is [ImageGen.slnx](ImageGen.slnx):
+
+```
+src/
+  ImageGen/            the console app (host, commands, generation, downloads)
+  ImageGen.Imaging/    generic image tools (PNG encode/decode) — pure, unit-tested
+tests/
+  ImageGen.Imaging.Tests/   xUnit tests for the deterministic imaging code
+```
+
+`models/`, `out/`, `logs/`, and `reports/` live at the **repository root**; the app
+uses paths relative to the working directory, so run commands from the repo root.
+
+```bash
+dotnet build ImageGen.slnx          # build everything
+dotnet test ImageGen.slnx           # run the imaging tests
+dotnet run --project src/ImageGen -- list   # run the app
+```
+
+The usage examples below abbreviate `dotnet run --project src/ImageGen --` to
+`dotnet run --` for brevity — run them from the repo root with the full
+`--project src/ImageGen` form.
+
 ## Models
 
 The quickest way to get the weights is `dotnet run -- download --all` (see

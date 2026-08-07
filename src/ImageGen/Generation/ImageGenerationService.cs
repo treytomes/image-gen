@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ImageGen.Imaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StableDiffusion.NET;

@@ -1,7 +1,10 @@
 {
     "cSpell.words": [
         "appsettings",
+        "autoencoder",
         "Cuda",
+        "denoise",
+        "denoised",
         "denoising",
         "flipbook",
         "gguf",
@@ -10,17 +13,23 @@
         "IEND",
         "IHDR",
         "imagegen",
+        "inpaint",
+        "inpainting",
         "madebyollin",
         "oversaturate",
         "oversaturating",
         "runwayml",
         "safetensors",
         "scanlines",
+        "slnx",
         "sdturbo",
         "sdxl",
         "sdxlturbo",
         "Serilog",
+        "sixel",
         "stabilityai",
-        "truecolor"
+        "staticness",
+        "truecolor",
+        "unfilter"
     ]
 }

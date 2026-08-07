@@ -9,9 +9,9 @@ Serilog:
       Microsoft: Warning
       Microsoft.Hosting.Lifetime: Information
   WriteTo:
-    - Name: Console
-      Args:
-        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
+    # - Name: Console
+    #   Args:
+    #     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
     - Name: File
       Args:
         path: logs/imagegen-.log

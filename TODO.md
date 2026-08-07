@@ -23,8 +23,15 @@ Every editing mode takes an input image as `HPPH.IImage`. Confirmed by reflectio
   anywhere. `DiffusionModel` exposes only `GenerateImage` / `GenerateVideo`.
 - The only way to build an `IImage` is `HPPH.Image<ColorRGB>.Create(buffer, w, h)`
   (or `Wrap(...)`) from **raw RGB pixels**.
-- Our `Png.cs` only **encodes**. So we must first write a **PNG decoder** (inflate +
-  unfilter, the reverse of `Png.cs`) to load a user's input image into raw RGB.
+- `Png` (now in `ImageGen.Imaging`) only **encodes**. So we must first write a
+  **PNG decoder** (inflate + unfilter, the reverse of `Png.Save`) to load a user's
+  input image into raw RGB.
+
+The imaging library and its test project already exist (`src/ImageGen.Imaging`,
+`tests/ImageGen.Imaging.Tests`). `PngTests.cs` has a **skipped round-trip test**
+(`Load_RoundTripsSavedImage`) as the red-green anchor: implement `Png.Load`, unskip
+it, and it asserts encode→decode returns the original pixels. Add a few real-file
+fixtures decoded from an external tool to prove independence from our own encoder.
 
 This is the gating task for the whole feature. Scope: a `Png.Load(path) ->
 (byte[] rgb, int w, int h)` mirroring `Png.Save`, using `System.IO.Compression`

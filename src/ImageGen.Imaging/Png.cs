@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.IO.Hashing;
 
-namespace ImageGen;
+namespace ImageGen.Imaging;
 
 /// <summary>
 /// Minimal dependency-free PNG encoder for 24-bit RGB buffers.
@@ -10,7 +10,7 @@ namespace ImageGen;
 /// IDAT data. Good enough for saving generated images without pulling in a
 /// commercially-licensed imaging library.
 /// </summary>
-static class Png
+public static class Png
 {
     /// <param name="rgb">Tightly packed RGB bytes, length == width * height * 3.</param>
     public static void Save(string path, ReadOnlySpan<byte> rgb, int width, int height)
