@@ -70,3 +70,34 @@ without a custom sampler. Findings (verified by reflection):
   guidance by run-progress, and a plausible upstream feature ask.
 - Verdict: not worth a custom sampling loop for a CPU-only tool. See TODO.md
   "Parked / revisit" for the residual follow-ups.
+
+## Solution restructure (src/ + tests/, ImageGen.slnx)
+
+Reorganized the flat project into a `.slnx` solution:
+- `src/ImageGen` — the console app.
+- `src/ImageGen.Imaging` — generic, deterministic image tools (the unit-testable
+  part), referenced by the app.
+- `tests/ImageGen.Imaging.Tests` — xUnit tests for the imaging library.
+- `models/`, `out/`, `logs/`, `reports/` stay at the repo root; run from root with
+  `dotnet run --project src/ImageGen --`.
+
+Only the imaging library is unit-tested; the app (native calls, DI, Ctrl-C, output
+quality) stays "run and see" by deliberate choice.
+
+## IImageCodec abstraction + PNG decoder
+
+Replaced the static `Png` with an instance `Png : IImageCodec` (Save/Load) so image
+I/O is injectable and swappable; registered `IImageCodec -> Png` and injected into
+`ImageGenerationService` in place of the static calls.
+
+- **`Png.Load` / `Png.Decode`** decode 8-bit non-interlaced PNGs: color type 2 (RGB)
+  and 6 (RGBA, alpha dropped), all five scanline filters (None/Sub/Up/Average/Paeth).
+  Unsupported variants (grayscale/palette/16-bit/interlaced) throw
+  `ImageFormatException`. `RawImage` carries packed 24-bit RGB.
+- **Tests:** round-trip Theory over several sizes, plus **external fixtures** — one
+  PNG per scanline filter and one RGBA — hand-authored in Python and **validated with
+  Pillow** (independent decoder) so they're trustworthy ground truth, not
+  self-referential. The committed `generate_fixtures.py` reproduces them byte-for-byte.
+  Guards the Sub/Up/Average/Paeth and alpha-drop paths our own encoder never exercises.
+- Verified beyond the suite: decoded a real 512×512 app-generated PNG and an external
+  RGBA PNG.

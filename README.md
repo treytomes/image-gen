@@ -79,7 +79,7 @@ that is picked up automatically and avoids occasional black/NaN output. The
 `download` command pulls it alongside the SDXL models.
 
 Filenames and source URLs are defined in `Presets.All` in
-[ModelPreset.cs](ModelPreset.cs) — adjust there if yours differ (e.g. a
+[ModelPreset.cs](src/ImageGen/ModelPreset.cs) — adjust there if yours differ (e.g. a
 quantized `.gguf`).
 
 ## Usage
@@ -316,7 +316,8 @@ That's why the practical advice is what it is:
 
 - **Turbo models** are distilled for few-step sampling: 1–4 steps at CFG ≈ 1.0.
   Full SD 1.5 wants ~20 steps at CFG ≈ 7. The presets encode this.
-- PNG encoding is done by a small dependency-free encoder ([Png.cs](Png.cs)) to
-  avoid ImageSharp 4.x's commercial license.
+- PNG encoding and decoding use a small dependency-free codec
+  ([Png.cs](src/ImageGen.Imaging/Png.cs), behind `IImageCodec`) to avoid
+  ImageSharp 4.x's commercial license.
 - First CPU run is slow (model load + generation). SD Turbo at 512×512 / 2 steps
   is the fastest to iterate with.

@@ -16,28 +16,16 @@ img2img / inpaint / ControlNet are practical on CPU with the SD 1.5 / SDXL weigh
 we already have; reference-image and PhotoMaker need extra weights and specific
 model support. ALL five share one hard prerequisite (see below).**
 
-### Shared prerequisite: a PNG *decoder*
+### Shared prerequisite: a PNG *decoder* — DONE
 
-Every editing mode takes an input image as `HPPH.IImage`. Confirmed by reflection:
-- The library has **no image loader** — no `LoadImage` / `FromFile` / `Decode`
-  anywhere. `DiffusionModel` exposes only `GenerateImage` / `GenerateVideo`.
-- The only way to build an `IImage` is `HPPH.Image<ColorRGB>.Create(buffer, w, h)`
-  (or `Wrap(...)`) from **raw RGB pixels**.
-- `Png` (now in `ImageGen.Imaging`) only **encodes**. So we must first write a
-  **PNG decoder** (inflate + unfilter, the reverse of `Png.Save`) to load a user's
-  input image into raw RGB.
-
-The imaging library and its test project already exist (`src/ImageGen.Imaging`,
-`tests/ImageGen.Imaging.Tests`). `PngTests.cs` has a **skipped round-trip test**
-(`Load_RoundTripsSavedImage`) as the red-green anchor: implement `Png.Load`, unskip
-it, and it asserts encode→decode returns the original pixels. Add a few real-file
-fixtures decoded from an external tool to prove independence from our own encoder.
-
-This is the gating task for the whole feature. Scope: a `Png.Load(path) ->
-(byte[] rgb, int w, int h)` mirroring `Png.Save`, using `System.IO.Compression`
-for inflate. Only need to support the 8-bit truecolor PNGs we ourselves write plus
-common editor output; document the supported subset. (Alternative: take input as
-raw/BMP to defer the decoder — but PNG in/PNG out is the sane UX.)
+Every editing mode takes an input image as `HPPH.IImage`, built via
+`HPPH.Image<ColorRGB>.Create(buffer, w, h)` from raw RGB — the library has no image
+loader of its own. That decoder now exists: **`Png.Load` / `Png.Decode`** in
+`ImageGen.Imaging` (behind `IImageCodec`), decoding 8-bit non-interlaced RGB/RGBA
+with all five scanline filters. Covered by fixture tests (one per filter + RGBA,
+Pillow-validated). See [DONE.md](DONE.md). So editing work can now start directly at
+img2img; each mode below just needs to load its input image(s) via the codec and
+hand the raw pixels to `HPPH.Image<ColorRGB>.Create`.
 
 ### The API, verified
 
@@ -54,7 +42,8 @@ paralleling `TextToImage`. Some modes also need model-load-time paths on
 - Feed an init image; `Strength` (0–1) sets how far from it to wander (low = subtle
   restyle, high = loosely inspired). Fewer effective steps than txt2img, so it's
   *cheaper* than generation.
-- Needs: PNG decoder. No extra weights — uses current sd15/sdxl checkpoints.
+- Needs: load the input via `IImageCodec` (done). No extra weights — uses current
+  sd15/sdxl checkpoints.
 - Impl: `GenerationRequest.InitImagePath` + `Strength`; if set, call
   `ImageToImage(prompt, img)` instead of `TextToImage`. New `edit`/`img2img` command
   or an `--init <png> --strength <f>` pair on `generate`.
@@ -64,9 +53,10 @@ paralleling `TextToImage`. Some modes also need model-load-time paths on
 ### 3b. inpaint — `MaskImage`  [CPU: easy]
 
 - Supply image + mask; only the masked region is regenerated.
-- Needs: PNG decoder (image **and** mask). **Open question (runtime):** does base
-  sd15/sdxl inpaint acceptably, or is a dedicated inpainting checkpoint required for
-  good seams? Reflection can't answer; test with base weights first.
+- Needs: load image **and** mask via `IImageCodec` (done). **Open question
+  (runtime):** does base sd15/sdxl inpaint acceptably, or is a dedicated inpainting
+  checkpoint required for good seams? Reflection can't answer; test with base weights
+  first.
 - Impl: `--mask <png>` alongside `--init`; wire `WithMaskImage`.
 - Testing: mask a rectangle over a generated image, prompt a replacement, check the
   unmasked region is preserved and the seam is plausible.
@@ -75,8 +65,9 @@ paralleling `TextToImage`. Some modes also need model-load-time paths on
 
 - Condition generation on structure (Canny edge map) so output follows composition
   while the prompt supplies content.
-- Needs: PNG decoder; a **ControlNet checkpoint** via `DiffusionModelParameter.
-  ControlNetPath` (extra multi-hundred-MB download); `KeepControlNetOnCPU` exists.
+- Needs: input loaded via `IImageCodec` (done); a **ControlNet checkpoint** via
+  `DiffusionModelParameter.ControlNetPath` (extra multi-hundred-MB download);
+  `KeepControlNetOnCPU` exists.
   `StableDiffusionCpp.PreprocessCanny(CannyParameter)` generates the edge map for us
   (static, returns an `Image`), so we don't hand-roll edge detection.
 - Impl: model-load path wiring + a preset/option for the ControlNet file;
@@ -97,17 +88,18 @@ paralleling `TextToImage`. Some modes also need model-load-time paths on
 
 - `PhotoMakerParameter { IdImages, IdEmbedPath, StyleStrength }` + model-load
   `StackedIdEmbeddingsDirectory`. Takes ID photos, preserves a subject's identity.
-- Needs: PNG decoder; a **PhotoMaker checkpoint** (extra download); it is
-  **SDXL-based**, so per-image cost is SDXL-tier (~4–5 min/image on our CPU per the
-  baseline). Not CPU-*hostile*, but the slowest and most setup-heavy. Lowest priority.
+- Needs: ID images loaded via `IImageCodec` (done); a **PhotoMaker checkpoint**
+  (extra download); it is **SDXL-based**, so per-image cost is SDXL-tier (~4–5
+  min/image on our CPU per the baseline). Not CPU-*hostile*, but the slowest and most
+  setup-heavy. Lowest priority.
 
 ### Suggested order
 
-1. **PNG decoder** (`Png.Load`) — unblocks everything.
-2. **img2img** (3a) — smallest, most useful, no extra weights.
-3. **inpaint** (3b) — small delta over img2img; answer the base-vs-dedicated-model question.
-4. **ControlNet** (3c) — first one needing model-load changes + an extra download.
-5. **Investigate RefImages** (3d) before deciding; **PhotoMaker** (3e) last.
+0. ~~**PNG decoder** (`Png.Load`) — unblocks everything.~~ **DONE.**
+1. **img2img** (3a) — smallest, most useful, no extra weights. Start here.
+2. **inpaint** (3b) — small delta over img2img; answer the base-vs-dedicated-model question.
+3. **ControlNet** (3c) — first one needing model-load changes + an extra download.
+4. **Investigate RefImages** (3d) before deciding; **PhotoMaker** (3e) last.
 
 ### Cross-cutting testing notes
 
