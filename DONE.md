@@ -158,21 +158,28 @@ instead of the preset default, and warns when a round's effective steps drop bel
 `ImageGen:Refinement`, documented inline and in the README. Verified the YAML binds
 (Steps=20, threshold=4).
 
-### Refinement console (command-driven tuning)
+### Refinement parameter prompts (prompt-through tuning)
 
-Grew the REPL from a fixed prompt+strength loop into a command console: a bare line
-is a refinement prompt; a `/command` adjusts a lever without generating.
+Grew the REPL so each round exposes **every** parameter, not just strength. After
+the refinement prompt, it walks through strength → steps → cfg → scheduler →
+negative prompt → seed, each a Spectre `TextPrompt<T>` pre-filled with the current
+value as its default: press Enter to keep it, or type a new value. Entered values
+carry forward as the next round's defaults.
 
-- Levers exposed as both `ImageGen:Refinement` config defaults and live commands:
-  `/strength`, `/steps`, `/cfg`, `/neg`, `/scheduler`, `/seed`, `/random on|off`,
-  `/reroll`, `/show`, `/help`. Config sets the session's starting values.
+- Starting values come from `ImageGen:Refinement` config (`Strength`, `Steps`,
+  `Cfg`, `Scheduler`, `NegativePrompt`, `RandomSeedEachRound`); parameters resolve to
+  concrete values up front (preset defaults folded in) so every prompt shows a real
+  default.
+- Enum scheduler prompt works because Spectre parses input via
+  `TypeDescriptor.GetConverter` (`EnumConverter` handles names case-insensitively);
+  `.WithConverter` only controls how the default is displayed.
 - **Seed handling (the sleeper fix):** rounds previously always reused seed 42, so
-  re-running a prompt was deterministic — no exploration. Now the seed is tracked
-  state; `RandomSeedEachRound` (config) or `/random on` picks a fresh seed per round,
-  and `/reroll` re-runs the last prompt with a new seed to explore alternatives.
+  re-running a prompt was deterministic — no exploration. Now with
+  `RandomSeedEachRound: true` the seed prompt pre-fills a fresh random value each
+  round (Enter = a new variation); otherwise it keeps the last seed.
 - `Cfg`/`NegativePrompt` only bite on non-distilled presets (sd15/sdxl); Turbo bakes
   CFG ≈ 1. Documented as such.
-- Verified: build 0/0, 17 tests pass, all new YAML keys bind (commented Cfg/Scheduler
-  correctly read as unset → preset default). Interactive display still not driveable
-  from the dev shell — command parsing and config are verified; on-screen rendering
-  is not.
+- (Superseded an intermediate slash-command design — `/strength` etc. — after it
+  proved less natural than Enter-through defaults.)
+- Verified: build 0/0, 17 tests pass, all new YAML keys bind, non-interactive path
+  exits gracefully. Interactive rendering still not driveable from the dev shell.

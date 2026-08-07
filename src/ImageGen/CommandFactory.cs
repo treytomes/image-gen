@@ -282,9 +282,10 @@ public static class CommandFactory
         AnsiConsole.Write(table);
     }
 
-    /// <summary>Interactive refinement console. A bare line is a prompt that refines the
-    /// previous output via img2img; a <c>/command</c> adjusts a setting without generating.
-    /// Exits on an empty line, "exit"/"quit", or Ctrl-C.</summary>
+    /// <summary>Interactive refinement loop. Each round prompts for a refinement prompt
+    /// and then walks through every parameter with its current value pre-filled as the
+    /// default — press Enter to keep a value, or type a new one. Each round refines the
+    /// previous output via img2img. Exits on an empty prompt, "exit"/"quit", or Ctrl-C.</summary>
     private static async Task RunRefinementLoopAsync(
         ModelPreset preset,
         GenerationResult seedImage,
@@ -293,33 +294,95 @@ public static class CommandFactory
         Func<GenerationRequest, string, Task<GenerationResult?>> runOne,
         CancellationToken cancellationToken)
     {
-        // Mutable per-session state, seeded from config; each is adjustable via a command.
-        var state = new RefineState
-        {
-            Strength = Math.Clamp(options.Strength, 0f, 1f),
-            Steps = options.Steps > 0 ? options.Steps : preset.Steps,
-            Cfg = options.Cfg,
-            NegativePrompt = options.NegativePrompt,
-            Scheduler = ParseScheduler(options.Scheduler),
-            Seed = startSeed,
-            RandomSeedEachRound = options.RandomSeedEachRound,
-        };
         var rng = new Random();
+
+        // Session state resolved to concrete values (preset defaults folded in), each
+        // carried forward as the default for the next round.
+        var strength = Math.Clamp(options.Strength, 0f, 1f);
+        var steps = options.Steps > 0 ? options.Steps : preset.Steps;
+        var cfg = options.Cfg ?? preset.Cfg;
+        var scheduler = ParseScheduler(options.Scheduler) ?? preset.Scheduler;
+        var negative = options.NegativePrompt ?? preset.NegativePrompt ?? "";
+        var seed = startSeed;
         var currentImage = seedImage.OutputPath;
-        string? lastPrompt = null;
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Refinement console.[/] Type a prompt to refine the image; " +
-            "[grey]/help[/] for commands. Empty line, [grey]exit[/], or [grey]Ctrl-C[/] to quit.");
-        PrintRefineState(state, preset);
+        AnsiConsole.MarkupLine("[bold]Refinement mode.[/] Enter a prompt, then press [grey]Enter[/] " +
+            "through the parameters to keep them (or type a new value). Each round refines the " +
+            "previous image. Empty prompt, [grey]exit[/], or [grey]Ctrl-C[/] to quit.");
 
         while (true)
         {
-            string line;
             try
             {
-                line = await AnsiConsole.PromptAsync(
+                var prompt = await AnsiConsole.PromptAsync(
                     new TextPrompt<string>("[green]refine[/]>").AllowEmpty(), cancellationToken);
+                prompt = prompt.Trim();
+                if (prompt.Length == 0 || prompt is "exit" or "quit")
+                    break;
+
+                // Walk each parameter; the current value is the default (Enter keeps it).
+                strength = await AnsiConsole.PromptAsync(
+                    new TextPrompt<float>("  strength (0-1)")
+                        .DefaultValue(strength)
+                        .Validate(v => v is >= 0f and <= 1f, "[red]must be between 0 and 1[/]"),
+                    cancellationToken);
+
+                steps = await AnsiConsole.PromptAsync(
+                    new TextPrompt<int>("  steps")
+                        .DefaultValue(steps)
+                        .Validate(v => v > 0, "[red]must be > 0[/]"),
+                    cancellationToken);
+
+                cfg = await AnsiConsole.PromptAsync(
+                    new TextPrompt<float>("  cfg")
+                        .DefaultValue(cfg)
+                        .Validate(v => v >= 0f, "[red]must be >= 0[/]"),
+                    cancellationToken);
+
+                scheduler = await AnsiConsole.PromptAsync(
+                    new TextPrompt<Scheduler>("  scheduler")
+                        .DefaultValue(scheduler)
+                        .WithConverter(s => s.ToString()),
+                    cancellationToken);
+
+                // Empty negative prompt is allowed; shows "(none)" style via a sentinel.
+                negative = await AnsiConsole.PromptAsync(
+                    new TextPrompt<string>("  negative prompt")
+                        .DefaultValue(negative)
+                        .AllowEmpty(),
+                    cancellationToken);
+
+                // Seed: default to a freshly-rolled value when random-each-round is on,
+                // otherwise keep the current seed. Either way the user can override.
+                var seedDefault = options.RandomSeedEachRound ? rng.Next() : seed;
+                seed = await AnsiConsole.PromptAsync(
+                    new TextPrompt<long>("  seed")
+                        .DefaultValue(seedDefault),
+                    cancellationToken);
+
+                // Warn when strength has too few effective steps to resolve.
+                var effective = strength * steps;
+                if (options.CoarseStrengthStepThreshold > 0 && effective < options.CoarseStrengthStepThreshold)
+                    AnsiConsole.MarkupLineInterpolated(
+                        $"[yellow]  note:[/] [grey]~{effective:F1} effective steps — strength control is coarse here; raise steps for finer blending.[/]");
+
+                var request = new GenerationRequest
+                {
+                    Preset = preset,
+                    Prompt = prompt,
+                    InitImagePath = currentImage,
+                    Strength = strength,
+                    Steps = steps,
+                    Cfg = cfg,
+                    NegativePrompt = negative,
+                    Scheduler = scheduler,
+                    Seed = seed,
+                };
+
+                var result = await runOne(request, $"{preset.Key} refine (seed {seed})");
+                if (result is { } r)
+                    currentImage = r.OutputPath; // chain: next round builds on this one
             }
             catch (OperationCanceledException) { break; } // Ctrl-C
             catch (InvalidOperationException)
@@ -327,128 +390,9 @@ public static class CommandFactory
                 AnsiConsole.MarkupLine("[yellow]Refinement mode needs an interactive terminal; skipping.[/]");
                 break;
             }
-
-            line = line.Trim();
-            if (line.Length == 0 || line is "exit" or "quit")
-                break;
-
-            // Slash-command: adjust state, don't generate.
-            if (line.StartsWith('/'))
-            {
-                if (HandleRefineCommand(line, state, preset, out var reroll))
-                {
-                    if (reroll && lastPrompt is { } lp)
-                    {
-                        state.Seed = rng.Next();
-                        await RunRoundAsync(lp);
-                    }
-                    else if (reroll)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Nothing to reroll yet — run a prompt first.[/]");
-                    }
-                }
-                continue;
-            }
-
-            lastPrompt = line;
-            if (state.RandomSeedEachRound)
-                state.Seed = rng.Next();
-            await RunRoundAsync(line);
         }
 
         AnsiConsole.MarkupLine("[grey]Left refinement mode.[/]");
-        return;
-
-        // Runs one refinement round from the current state and chains the output.
-        async Task RunRoundAsync(string prompt)
-        {
-            var effective = state.Strength * state.Steps;
-            if (options.CoarseStrengthStepThreshold > 0 && effective < options.CoarseStrengthStepThreshold)
-                AnsiConsole.MarkupLineInterpolated(
-                    $"[yellow]  note:[/] [grey]~{effective:F1} effective steps — strength control is coarse here; raise steps with /steps.[/]");
-
-            var request = new GenerationRequest
-            {
-                Preset = preset,
-                Prompt = prompt,
-                InitImagePath = currentImage,
-                Strength = state.Strength,
-                Steps = state.Steps,
-                Cfg = state.Cfg,
-                NegativePrompt = state.NegativePrompt,
-                Scheduler = state.Scheduler,
-                Seed = state.Seed,
-            };
-
-            var result = await runOne(request, $"{preset.Key} refine (seed {state.Seed})");
-            if (result is { } r)
-                currentImage = r.OutputPath; // chain: next round builds on this one
-        }
-    }
-
-    /// <summary>Mutable state for a refinement session.</summary>
-    private sealed class RefineState
-    {
-        public float Strength;
-        public int Steps;
-        public float? Cfg;
-        public string? NegativePrompt;
-        public Scheduler? Scheduler;
-        public long Seed;
-        public bool RandomSeedEachRound;
-    }
-
-    /// <summary>Handles a <c>/command</c> line, mutating <paramref name="state"/>. Returns
-    /// true if the line was a recognized command; sets <paramref name="reroll"/> when the
-    /// command was <c>/reroll</c>.</summary>
-    private static bool HandleRefineCommand(string line, RefineState state, ModelPreset preset, out bool reroll)
-    {
-        reroll = false;
-        var parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
-        var cmd = parts[0].ToLowerInvariant();
-        var arg = parts.Length > 1 ? parts[1] : "";
-
-        switch (cmd)
-        {
-            case "/help":
-                AnsiConsole.MarkupLine(
-                    "[grey]Commands: /strength <0-1>, /steps <n>, /cfg <f>, /neg <text> (blank clears), " +
-                    "/scheduler <name>, /seed <n>, /random on|off, /reroll, /show, /help[/]");
-                break;
-            case "/show":
-                PrintRefineState(state, preset);
-                break;
-            case "/strength" when float.TryParse(arg, out var s) && s is >= 0f and <= 1f:
-                state.Strength = s; break;
-            case "/steps" when int.TryParse(arg, out var n) && n > 0:
-                state.Steps = n; break;
-            case "/cfg" when float.TryParse(arg, out var c) && c >= 0f:
-                state.Cfg = c; break;
-            case "/neg":
-                state.NegativePrompt = arg.Length == 0 ? null : arg; break;
-            case "/scheduler" when Enum.TryParse<Scheduler>(arg, ignoreCase: true, out var sch):
-                state.Scheduler = sch; break;
-            case "/seed" when long.TryParse(arg, out var seed):
-                state.Seed = seed; state.RandomSeedEachRound = false; break;
-            case "/random" when arg is "on" or "off":
-                state.RandomSeedEachRound = arg == "on"; break;
-            case "/reroll":
-                reroll = true; break;
-            default:
-                AnsiConsole.MarkupLineInterpolated($"[red]Unknown or invalid command:[/] {Markup.Escape(line)}  [grey](/help)[/]");
-                return true;
-        }
-        return true;
-    }
-
-    private static void PrintRefineState(RefineState s, ModelPreset preset)
-    {
-        var cfg = s.Cfg?.ToString() ?? $"{preset.Cfg} (preset)";
-        var sched = s.Scheduler?.ToString() ?? $"{preset.Scheduler} (preset)";
-        var neg = string.IsNullOrEmpty(s.NegativePrompt) ? "(none)" : s.NegativePrompt;
-        var seed = s.RandomSeedEachRound ? "random each round" : s.Seed.ToString();
-        AnsiConsole.MarkupLineInterpolated(
-            $"[grey]strength {s.Strength} · steps {s.Steps} · cfg {cfg} · scheduler {sched} · seed {seed} · neg {neg}[/]");
     }
 
     /// <summary>Parses a scheduler name (case-insensitive), or null if unset/invalid.</summary>

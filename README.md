@@ -130,53 +130,49 @@ dotnet run -- generate sd15 "an oil painting of a fox" --init photo.png --streng
 - Works with any preset. Combine with `--count` for a strength/seed sweep, or
   `--preview` to watch the edit converge.
 
-### Interactive refinement console (`--repl`)
+### Interactive refinement (`--repl`)
 
-`--repl` drops you into a refinement console after the first image is generated. A
-**bare line is a prompt** that reworks the *previous* output via img2img; a
-**`/command` adjusts a setting** without generating. Each refinement is saved as
-its own timestamped file and becomes the input to the next round, so you iterate
-toward a result conversationally:
+`--repl` drops you into a refinement loop after the first image is generated. Each
+round you enter a prompt, then **step through every parameter with its current
+value pre-filled** — press Enter to keep a value, or type a new one. Each round
+refines the *previous* output via img2img and is saved as its own timestamped file,
+so you iterate toward a result:
 
 ```bash
 dotnet run -- generate sdturbo "a red fox in a snowy forest" --repl
 ```
 ```
-refine> /strength 0.4          # set how far each round may stray (0–1)
-refine> make the sky dramatic  # runs a refinement round
-refine> add falling snow       # refines the previous result
-refine> /reroll                # re-run the last prompt with a new random seed
-refine> /show                  # print current settings
-refine>                        # empty line, "exit", or Ctrl-C to quit
+refine> make the sky more dramatic
+  strength (0-1) [0.5]:            (Enter keeps 0.5)
+  steps [20]:
+  cfg [7]:
+  scheduler [Default]:
+  negative prompt [blurry, low quality, distorted]:
+  seed [42]: 99                    (typed a new seed)
+... refined image generates, becomes the input to the next round ...
+refine>                            (empty prompt, "exit", or Ctrl-C to quit)
 ```
 
-**Commands:**
+Every parameter is exposed each round with a sensible default, so you can Enter
+straight through to reuse everything, or change just the one you care about. Values
+you set carry forward as the next round's defaults. The starting values come from
+`ImageGen:Refinement` in [appsettings.yaml](src/ImageGen/appsettings.yaml)
+(`Strength`, `Steps`, `Cfg`, `Scheduler`, `NegativePrompt`, `RandomSeedEachRound`),
+so you can preset your preferences. Leave with an empty prompt, `exit`/`quit`, or
+**Ctrl-C**. Requires an interactive terminal and a single image (ignored with
+`--count > 1`).
 
-| Command | Effect |
-|---|---|
-| `/strength <0–1>` | How far a round may stray from its input |
-| `/steps <n>` | Sampling steps per round (more = finer strength control, slower) |
-| `/cfg <f>` | Guidance scale (only affects `sd15`/`sdxl`; Turbo bakes CFG ≈ 1) |
-| `/neg <text>` | Negative prompt for following rounds (blank clears it) |
-| `/scheduler <name>` | Sampling scheduler (e.g. `AYS`, `Karras`) |
-| `/seed <n>` | Fix the seed to a value (disables random-each-round) |
-| `/random on\|off` | Whether each round picks a fresh random seed |
-| `/reroll` | Re-run the last prompt with a new random seed |
-| `/show`, `/help` | Print current settings / the command list |
-
-All defaults come from `ImageGen:Refinement` in
-[appsettings.yaml](src/ImageGen/appsettings.yaml), so you can set your preferred
-starting strength, steps, CFG, etc. without passing commands every session. Leave
-with an empty line, `exit`/`quit`, or **Ctrl-C**. Requires an interactive terminal
-and a single image (ignored with `--count > 1`).
-
-**Why the step count matters.** In image-to-image, strength effectively scales how
-many sampling steps run (`effective ≈ strength × steps`). With a preset's few-step
-default (SD Turbo uses 2), strength collapses to ~2 outcomes and feels like an
-on/off switch — so the console uses its own higher step count (`Refinement:Steps`,
-default 20) for smooth blending, and warns (`CoarseStrengthStepThreshold`, default
-4) when a round's effective steps are too low to resolve. Raise steps with
-`/steps` or in config for finer control at the cost of longer rounds.
+Notes:
+- **cfg / negative prompt** only affect non-distilled presets (`sd15`/`sdxl`); the
+  Turbo presets bake CFG ≈ 1, so those two do little there.
+- **seed**: with `RandomSeedEachRound: true`, the seed prompt pre-fills a fresh
+  random value each round (Enter explores a new variation); otherwise it keeps the
+  last seed (Enter reproduces).
+- **step count matters:** strength effectively scales how many steps run
+  (`effective ≈ strength × steps`), so a preset's few-step default (SD Turbo = 2)
+  makes strength coarse. The loop defaults to `Refinement:Steps` (20) for smooth
+  blending and warns when `strength × steps` drops below
+  `CoarseStrengthStepThreshold` (4).
 
 ### Batch generation and stopping early
 
