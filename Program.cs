@@ -79,6 +79,10 @@ try
         else
         {
             Console.Error.WriteLine("Quitting immediately.");
+            // Environment.Exit skips the finally block's Log.CloseAndFlushAsync, so
+            // flush Serilog's buffered sinks here to preserve the run's log tail.
+            // Guard it — a flush failure must not block the exit the user asked for.
+            try { Log.CloseAndFlush(); } catch { /* exiting regardless */ }
             Environment.Exit(130); // 128 + SIGINT, conventional for Ctrl-C
         }
     };
