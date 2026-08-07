@@ -13,6 +13,7 @@ namespace ImageGen.Generation;
 /// can run inside the background service.
 /// </summary>
 public sealed class ImageGenerationService(
+    IImageCodec imageCodec,
     IOptions<ImageGenOptions> options,
     ILogger<ImageGenerationService> logger)
 {
@@ -97,7 +98,7 @@ public sealed class ImageGenerationService(
             {
                 Directory.CreateDirectory(previewDir);
                 var frame = Path.Combine(previewDir, $"step-{e.Step:D4}.png");
-                Png.Save(frame, e.Image.ToRawArray(), e.Image.Width, e.Image.Height);
+                imageCodec.Save(frame, e.Image.ToRawArray(), e.Image.Width, e.Image.Height);
                 previewsWritten++;
             }
             catch (Exception ex)
@@ -143,7 +144,7 @@ public sealed class ImageGenerationService(
             // Ensure the bar reads 100% even if the last step event lagged.
             progress?.Report(GenerationProgress.Sampling(totalSteps, totalSteps));
 
-            Png.Save(outPath, image.ToRawArray(), image.Width, image.Height);
+            imageCodec.Save(outPath, image.ToRawArray(), image.Width, image.Height);
 
             logger.LogInformation(
                 "Saved {Path} (load {Load:F1}s, gen {Gen:F1}s)", outPath, loadSeconds, genSeconds);

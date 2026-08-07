@@ -5,6 +5,8 @@ namespace ImageGen.Imaging.Tests;
 
 public class PngTests
 {
+    private readonly Png _png = new();
+
     /// <summary>Builds a small deterministic RGB gradient for test input.</summary>
     private static byte[] Gradient(int width, int height)
     {
@@ -20,10 +22,10 @@ public class PngTests
         return rgb;
     }
 
-    private static string SaveTemp(byte[] rgb, int width, int height)
+    private string SaveTemp(byte[] rgb, int width, int height)
     {
         var path = Path.Combine(Path.GetTempPath(), $"pngtest-{Guid.NewGuid():N}.png");
-        Png.Save(path, rgb, width, height);
+        _png.Save(path, rgb, width, height);
         return path;
     }
 
@@ -70,23 +72,56 @@ public class PngTests
     public void Save_RejectsBufferOfWrongLength()
     {
         // 4x4 needs 48 bytes; give it 47.
-        Assert.Throws<ArgumentException>(() => Png.Save(
+        Assert.Throws<ArgumentException>(() => _png.Save(
             Path.Combine(Path.GetTempPath(), "should-not-exist.png"),
             new byte[47], 4, 4));
     }
 
-    // Anchor for the PNG decoder (TODO): once Png.Load exists, this round-trip is the
-    // strongest correctness test — encode then decode must return the original pixels.
-    // Skipped until the decoder lands so the suite stays green.
-    [Fact(Skip = "Enable when Png.Load (decoder) is implemented.")]
-    public void Load_RoundTripsSavedImage()
+    // The strongest correctness test: encode then decode must return the original
+    // pixels exactly, across a range of sizes (odd widths exercise stride handling).
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(4, 4)]
+    [InlineData(7, 3)]     // odd width, non-square
+    [InlineData(16, 9)]
+    [InlineData(1, 100)]   // single column
+    [InlineData(100, 1)]   // single row
+    public void Load_RoundTripsSavedImage(int width, int height)
     {
-        // const int width = 16, height = 9;
-        // var original = Gradient(width, height);
-        // var path = SaveTemp(original, width, height);
-        // var (rgb, w, h) = Png.Load(path);
-        // Assert.Equal(width, w);
-        // Assert.Equal(height, h);
-        // Assert.Equal(original, rgb);
+        var original = Gradient(width, height);
+        var path = SaveTemp(original, width, height);
+        try
+        {
+            var decoded = _png.Load(path);
+            Assert.Equal(width, decoded.Width);
+            Assert.Equal(height, decoded.Height);
+            Assert.Equal(original, decoded.Pixels);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Load_RejectsNonPng()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"notpng-{Guid.NewGuid():N}.png");
+        File.WriteAllText(path, "this is not a PNG");
+        try
+        {
+            Assert.Throws<ImageFormatException>(() => _png.Load(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Decode_RejectsBadSignature()
+    {
+        var notPng = new byte[16];
+        Assert.Throws<ImageFormatException>(() => _png.Decode(notPng));
     }
 }

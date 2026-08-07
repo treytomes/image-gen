@@ -2,6 +2,7 @@ using System.CommandLine;
 using ImageGen;
 using ImageGen.Downloads;
 using ImageGen.Generation;
+using ImageGen.Imaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +29,9 @@ builder.Services.AddSerilog((services, cfg) => cfg
     .ReadFrom.Configuration(builder.Configuration)
     .ReadFrom.Services(services)
     .Enrich.FromLogContext());
+
+// Imaging: PNG encode/decode, injected wherever images are read or written.
+builder.Services.AddSingleton<IImageCodec, Png>();
 
 // Generation stack: the engine, a queue, and the background worker that drains it.
 builder.Services.AddSingleton<ImageGenerationService>();
