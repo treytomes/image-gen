@@ -3,6 +3,7 @@
         "appsettings",
         "Cuda",
         "denoising",
+        "flipbook",
         "gguf",
         "HPPH",
         "IDAT",

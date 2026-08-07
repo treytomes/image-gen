@@ -12,7 +12,33 @@ what's uncertain, and the smallest useful first step.
 **Goal:** Let the user watch the image form step-by-step and stop early once the
 result is good enough (or abandon a bad run without waiting for all steps).
 
-**Verdict after research: FEASIBLE as monitor-and-abort. Recommended to build.**
+**STATUS: SHIPPED (preview frames).** `generate --preview <N>` writes intermediate
+frames to `<output>.previews/`; `--preview-mode` selects tae/vae/proj. See README.
+The "watch it form" half is done. The "abort early" half is still open (see below).
+
+### What the runtime testing taught us (beyond the reflection findings)
+
+- **`EnablePreview`'s interval is ignored in this build** — the native `Preview`
+  event fires **every step** regardless of the interval passed. We enforce the
+  interval **client-side** in the handler instead (keep first, last, and every Nth
+  step). Verified: `--steps 8 --preview 3` → frames at steps 1, 3, 6, 8.
+- **Preview cost is significant on CPU**, exactly as feared. A 12-step sd15 run with
+  per-step TAE previews took ~404s vs. the ~273s/20-step baseline — because the
+  native side decodes a preview *every* step even though we only save some. Our
+  client-side throttle limits **disk output**, not the wasted decode time. Documented
+  in README as "exploration, not timed runs."
+- Preview payload confirmed as decoded `HPPH.Image<ColorRGB>`; `Png.Save` reuse worked
+  with zero new decode code, as predicted.
+
+### Still open: early abort
+
+`GenerateImage` takes no `CancellationToken`, so cancelling mid-run isn't wired yet.
+The runtime test for "can an in-flight generation be interrupted at all" (original
+step 4) was **not** performed — the preview half was the priority. Next step if we
+want true monitor-**and-abort**: attempt to interrupt the native call and document
+whether it's possible or whether cancellation only takes effect between jobs.
+
+### Original research verdict (kept for reference): FEASIBLE as monitor-and-abort.
 
 ### Research findings (StableDiffusion.NET 7.0.0, verified by reflection)
 

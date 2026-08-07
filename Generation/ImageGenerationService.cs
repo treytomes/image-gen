@@ -54,6 +54,11 @@ public sealed class ImageGenerationService(
             request.Preset.Key, request.EffectiveWidth, request.EffectiveHeight,
             request.EffectiveSteps, request.EffectiveCfg, request.Seed);
 
+        // Resolve the output path once up front: preview frames are written during
+        // generation and must share the final image's (timestamped) base name.
+        var outPath = Path.GetFullPath(request.ResolveOutputPath());
+        var previewDir = request.PreviewEnabled ? GenerationRequest.PreviewDirectoryFor(outPath) : null;
+
         var totalSteps = request.EffectiveSteps;
         progress?.Report(GenerationProgress.Loading(totalSteps));
 
@@ -71,12 +76,50 @@ public sealed class ImageGenerationService(
                 progress?.Report(GenerationProgress.Sampling(e.Step, e.Steps > 0 ? e.Steps : totalSteps));
         }
 
+        var previewsWritten = 0;
+
+        // Fired on the native worker thread. Note: this build's EnablePreview appears
+        // to fire every step regardless of the interval we pass, so we enforce the
+        // interval here — keep the first and last steps, plus every Nth in between.
+        // We only write a file (no shared state, no UI), so no synchronization needed.
+        void OnPreview(object? _, StableDiffusionPreviewEventArgs e)
+        {
+            if (!sampling || previewDir is null)
+                return;
+
+            var interval = request.PreviewInterval;
+            var keep = e.Step <= 1 || e.Step >= totalSteps || e.Step % interval == 0;
+            if (!keep)
+                return;
+
+            try
+            {
+                Directory.CreateDirectory(previewDir);
+                var frame = Path.Combine(previewDir, $"step-{e.Step:D4}.png");
+                Png.Save(frame, e.Image.ToRawArray(), e.Image.Width, e.Image.Height);
+                previewsWritten++;
+            }
+            catch (Exception ex)
+            {
+                // A failed preview frame must never fail the generation.
+                logger.LogWarning(ex, "Failed to write preview frame at step {Step}", e.Step);
+            }
+        }
+
         // The managed Log/Progress/Preview events are dormant until the native
         // callbacks are registered. This is a one-time, idempotent global setup.
         StableDiffusionCpp.InitializeEvents();
 
         var loadStart = Stopwatch.GetTimestamp();
         StableDiffusionCpp.Progress += OnProgress;
+        if (request.PreviewEnabled)
+        {
+            StableDiffusionCpp.EnablePreview(request.PreviewMode, request.PreviewInterval, denoised: true, noisy: false);
+            StableDiffusionCpp.Preview += OnPreview;
+            logger.LogInformation(
+                "Preview enabled: {Mode} every {Interval} step(s) -> {Dir}",
+                request.PreviewMode, request.PreviewInterval, previewDir);
+        }
         try
         {
             using var model = new DiffusionModel(modelParam);
@@ -99,16 +142,23 @@ public sealed class ImageGenerationService(
             // Ensure the bar reads 100% even if the last step event lagged.
             progress?.Report(GenerationProgress.Sampling(totalSteps, totalSteps));
 
-            var outPath = Path.GetFullPath(request.ResolveOutputPath());
             Png.Save(outPath, image.ToRawArray(), image.Width, image.Height);
 
             logger.LogInformation(
                 "Saved {Path} (load {Load:F1}s, gen {Gen:F1}s)", outPath, loadSeconds, genSeconds);
-            return new GenerationResult(outPath, loadSeconds, genSeconds);
+            return new GenerationResult(
+                outPath, loadSeconds, genSeconds,
+                previewsWritten > 0 ? previewDir : null);
         }
         finally
         {
             StableDiffusionCpp.Progress -= OnProgress;
+            if (request.PreviewEnabled)
+            {
+                StableDiffusionCpp.Preview -= OnPreview;
+                // Reset global preview state so it doesn't leak to the next job.
+                StableDiffusionCpp.EnablePreview(Preview.None, 0, denoised: false, noisy: false);
+            }
         }
     }
 

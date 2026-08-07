@@ -6,6 +6,7 @@ using ImageGen.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
+using StableDiffusion.NET;
 
 namespace ImageGen;
 
@@ -40,10 +41,22 @@ public static class CommandFactory
         var negOpt = new Option<string?>("--negative", "-n") { Description = "Negative prompt." };
         var threadsOpt = new Option<int?>("--threads") { Description = "CPU thread count (default: all cores)." };
         var sizeOpt = new Option<string?>("--size") { Description = "Dimensions as WxH, e.g. 512x512." };
+        var previewOpt = new Option<int>("--preview")
+        {
+            Description = "Save an intermediate preview image every N sampling steps (0 = off).",
+            DefaultValueFactory = _ => 0,
+        };
+        var previewModeOpt = new Option<string>("--preview-mode")
+        {
+            Description = "Preview decoder: tae (fast, default), vae (accurate/slow), or proj (cheapest).",
+            DefaultValueFactory = _ => "tae",
+        };
+        previewModeOpt.AcceptOnlyFromAmong("tae", "vae", "proj");
 
         var cmd = new Command("generate", "Generate an image from a text prompt.")
         {
             presetArg, promptArg, outOpt, seedOpt, stepsOpt, cfgOpt, negOpt, threadsOpt, sizeOpt,
+            previewOpt, previewModeOpt,
         };
 
         cmd.SetAction(async (parseResult, cancellationToken) =>
@@ -64,6 +77,13 @@ public static class CommandFactory
                 size = (w, h);
             }
 
+            var previewMode = parseResult.GetValue(previewModeOpt) switch
+            {
+                "vae" => Preview.VAE,
+                "proj" => Preview.Proj,
+                _ => Preview.TAE,
+            };
+
             var request = new GenerationRequest
             {
                 Preset = preset,
@@ -76,6 +96,8 @@ public static class CommandFactory
                 Seed = parseResult.GetValue(seedOpt),
                 Threads = parseResult.GetValue(threadsOpt),
                 OutputPath = parseResult.GetValue(outOpt),
+                PreviewInterval = Math.Max(0, parseResult.GetValue(previewOpt)),
+                PreviewMode = previewMode,
             };
 
             PrintRequestSummary(request);
@@ -133,6 +155,8 @@ public static class CommandFactory
                 return 2;
 
             AnsiConsole.MarkupLineInterpolated($"[green]Saved:[/] {res.OutputPath}");
+            if (res.PreviewDirectory is { } previewDir)
+                AnsiConsole.MarkupLineInterpolated($"[grey]Preview frames:[/] {previewDir}");
             AnsiConsole.MarkupLineInterpolated(
                 $"[grey]load {res.LoadSeconds:F1}s + gen {res.GenerationSeconds:F1}s[/]");
             return 0;

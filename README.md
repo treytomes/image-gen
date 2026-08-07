@@ -71,6 +71,21 @@ When `--out` is omitted, output PNGs are written to a timestamped file under
 `out/` — e.g. `out/sd15-20260806-145000-seed42.png` — so successive runs don't
 overwrite each other.
 
+### Watching an image form (preview frames)
+
+`--preview <N>` saves an intermediate image every N sampling steps so you can
+watch the picture emerge from noise (flip through the frames like a flipbook):
+
+```bash
+dotnet run -- generate sd15 "a red fox in a snowy forest" --preview 4
+```
+
+Frames land in a `<output>.previews/` directory next to the final image, named
+`step-0001.png`, `step-0004.png`, … (the first and last steps are always kept).
+`--preview-mode` picks the decoder: `tae` (fast, default), `vae` (accurate but
+slow), or `proj` (cheapest). Previews add real cost on CPU — a frame is decoded
+at every step internally — so use them for exploration, not timed runs.
+
 ### Downloading models
 
 The `download` command fetches files into the models directory via a background
