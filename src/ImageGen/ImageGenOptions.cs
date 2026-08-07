@@ -36,4 +36,27 @@ public sealed class RefinementOptions
     /// value, the REPL warns that strength control is coarse. Set to 0 to disable the
     /// hint.</summary>
     public int CoarseStrengthStepThreshold { get; set; } = 4;
+
+    /// <summary>Starting image-to-image strength (0–1) for the first refinement round;
+    /// the REPL remembers the last value thereafter. Overridable per round with
+    /// <c>/strength</c>.</summary>
+    public float Strength { get; set; } = 0.5f;
+
+    /// <summary>Guidance (CFG) scale for refinement, or null to use the preset default.
+    /// Only affects non-distilled presets (sd15/sdxl); Turbo presets bake CFG ≈ 1.
+    /// Overridable per round with <c>/cfg</c>.</summary>
+    public float? Cfg { get; set; }
+
+    /// <summary>Negative prompt applied to every refinement round, or null for none.
+    /// Only meaningful on non-distilled presets. Overridable per round with <c>/neg</c>.</summary>
+    public string? NegativePrompt { get; set; }
+
+    /// <summary>Sampling scheduler name (e.g. <c>AYS</c>, <c>Karras</c>) for refinement,
+    /// or null to use the preset default. Overridable per round with <c>/scheduler</c>.</summary>
+    public string? Scheduler { get; set; }
+
+    /// <summary>When true, each round uses a fresh random seed so re-running a prompt
+    /// explores variations; when false, a fixed seed makes rounds reproducible.
+    /// The <c>/reroll</c> command forces a new seed regardless.</summary>
+    public bool RandomSeedEachRound { get; set; }
 }

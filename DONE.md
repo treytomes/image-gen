@@ -157,3 +157,22 @@ instead of the preset default, and warns when a round's effective steps drop bel
 `CoarseStrengthStepThreshold` (default 4). Both live in `appsettings.yaml` under
 `ImageGen:Refinement`, documented inline and in the README. Verified the YAML binds
 (Steps=20, threshold=4).
+
+### Refinement console (command-driven tuning)
+
+Grew the REPL from a fixed prompt+strength loop into a command console: a bare line
+is a refinement prompt; a `/command` adjusts a lever without generating.
+
+- Levers exposed as both `ImageGen:Refinement` config defaults and live commands:
+  `/strength`, `/steps`, `/cfg`, `/neg`, `/scheduler`, `/seed`, `/random on|off`,
+  `/reroll`, `/show`, `/help`. Config sets the session's starting values.
+- **Seed handling (the sleeper fix):** rounds previously always reused seed 42, so
+  re-running a prompt was deterministic — no exploration. Now the seed is tracked
+  state; `RandomSeedEachRound` (config) or `/random on` picks a fresh seed per round,
+  and `/reroll` re-runs the last prompt with a new seed to explore alternatives.
+- `Cfg`/`NegativePrompt` only bite on non-distilled presets (sd15/sdxl); Turbo bakes
+  CFG ≈ 1. Documented as such.
+- Verified: build 0/0, 17 tests pass, all new YAML keys bind (commented Cfg/Scheduler
+  correctly read as unset → preset default). Interactive display still not driveable
+  from the dev shell — command parsing and config are verified; on-screen rendering
+  is not.

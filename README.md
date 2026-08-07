@@ -130,38 +130,53 @@ dotnet run -- generate sd15 "an oil painting of a fox" --init photo.png --streng
 - Works with any preset. Combine with `--count` for a strength/seed sweep, or
   `--preview` to watch the edit converge.
 
-### Interactive refinement (`--repl`)
+### Interactive refinement console (`--repl`)
 
-`--repl` drops you into a refinement loop after the first image is generated. Each
-prompt you enter reworks the *previous* output via img2img, so you can iterate
+`--repl` drops you into a refinement console after the first image is generated. A
+**bare line is a prompt** that reworks the *previous* output via img2img; a
+**`/command` adjusts a setting** without generating. Each refinement is saved as
+its own timestamped file and becomes the input to the next round, so you iterate
 toward a result conversationally:
 
 ```bash
 dotnet run -- generate sdturbo "a red fox in a snowy forest" --repl
-# ... first image generates, then:
-# refine> make the sky more dramatic
-#   strength [0.75]: 0.5
-# ... refined image generates from the previous one ...
-# refine> add falling snow
-#   strength [0.5]:            (Enter reuses 0.5)
-# refine>                      (empty, "exit", or Ctrl-C to quit)
+```
+```
+refine> /strength 0.4          # set how far each round may stray (0–1)
+refine> make the sky dramatic  # runs a refinement round
+refine> add falling snow       # refines the previous result
+refine> /reroll                # re-run the last prompt with a new random seed
+refine> /show                  # print current settings
+refine>                        # empty line, "exit", or Ctrl-C to quit
 ```
 
-Each round prompts for the text and then a **strength** (0–1); the strength
-defaults to the last value used, so pressing Enter reuses it. Every refinement is
-saved as its own timestamped file, and the next round builds on the most recent
-one. Leave with an empty prompt, `exit`/`quit`, or **Ctrl-C**. Requires an
-interactive terminal and a single image (ignored with `--count > 1`).
+**Commands:**
 
-**Strength resolution and step count.** In image-to-image, strength effectively
-scales how many sampling steps run (`effective ≈ strength × steps`). With a
-preset's few-step default (SD Turbo uses 2), strength collapses to only ~2
-outcomes and feels like an on/off switch. The REPL therefore uses its own higher
-step count — configurable via `ImageGen:Refinement:Steps` (default 20) in
-[appsettings.yaml](src/ImageGen/appsettings.yaml) — so strength blends smoothly.
-If a round's effective steps fall below `ImageGen:Refinement:CoarseStrengthStepThreshold`
-(default 4), the REPL notes that strength control is coarse. Raising `Steps` gives
-finer control at the cost of longer rounds.
+| Command | Effect |
+|---|---|
+| `/strength <0–1>` | How far a round may stray from its input |
+| `/steps <n>` | Sampling steps per round (more = finer strength control, slower) |
+| `/cfg <f>` | Guidance scale (only affects `sd15`/`sdxl`; Turbo bakes CFG ≈ 1) |
+| `/neg <text>` | Negative prompt for following rounds (blank clears it) |
+| `/scheduler <name>` | Sampling scheduler (e.g. `AYS`, `Karras`) |
+| `/seed <n>` | Fix the seed to a value (disables random-each-round) |
+| `/random on\|off` | Whether each round picks a fresh random seed |
+| `/reroll` | Re-run the last prompt with a new random seed |
+| `/show`, `/help` | Print current settings / the command list |
+
+All defaults come from `ImageGen:Refinement` in
+[appsettings.yaml](src/ImageGen/appsettings.yaml), so you can set your preferred
+starting strength, steps, CFG, etc. without passing commands every session. Leave
+with an empty line, `exit`/`quit`, or **Ctrl-C**. Requires an interactive terminal
+and a single image (ignored with `--count > 1`).
+
+**Why the step count matters.** In image-to-image, strength effectively scales how
+many sampling steps run (`effective ≈ strength × steps`). With a preset's few-step
+default (SD Turbo uses 2), strength collapses to ~2 outcomes and feels like an
+on/off switch — so the console uses its own higher step count (`Refinement:Steps`,
+default 20) for smooth blending, and warns (`CoarseStrengthStepThreshold`, default
+4) when a round's effective steps are too low to resolve. Raise steps with
+`/steps` or in config for finer control at the cost of longer rounds.
 
 ### Batch generation and stopping early
 
@@ -368,10 +383,11 @@ That's why the practical advice is what it is:
   configuration provider.
   - `ImageGen:ModelsDir` — where model files live (default `models`).
   - `ImageGen:DownloadWorkerCount` — concurrent downloads (default `2`, min `1`).
-  - `ImageGen:Refinement:Steps` — sampling steps per `--repl` refinement round
-    (default `20`); higher gives finer strength control, slower rounds.
-  - `ImageGen:Refinement:CoarseStrengthStepThreshold` — warn when a round's
-    effective steps fall below this (default `4`; `0` disables the hint).
+  - `ImageGen:Refinement:*` — defaults for the `--repl` console: `Steps`
+    (default `20`), `CoarseStrengthStepThreshold` (`4`; `0` disables the hint),
+    `Strength` (`0.5`), `Cfg` (unset → preset), `NegativePrompt` (unset),
+    `Scheduler` (unset → preset), `RandomSeedEachRound` (`false`). All also
+    adjustable live via `/`-commands in the console.
 - Config can be overridden by environment variables prefixed `IMAGEGEN_`
   (e.g. `IMAGEGEN_ImageGen__ModelsDir=/data/models`,
   `IMAGEGEN_ImageGen__DownloadWorkerCount=4`). `MODELS_DIR` is also honored.
