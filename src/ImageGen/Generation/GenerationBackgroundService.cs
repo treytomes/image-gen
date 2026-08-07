@@ -14,11 +14,14 @@ public sealed class GenerationBackgroundService(
     ILogger<GenerationBackgroundService> logger)
     : QueueWorkerService<GenerationRequest, GenerationProgress, GenerationResult>(queue, logger)
 {
+    /// <inheritdoc/>
     protected override string ServiceName => "Generation service";
 
+    /// <inheritdoc/>
     protected override string Describe(WorkJob<GenerationRequest, GenerationProgress, GenerationResult> job) =>
         job.Request.Preset.Key;
 
+    /// <inheritdoc/>
     protected override Task<GenerationResult> ExecuteJobAsync(
         WorkJob<GenerationRequest, GenerationProgress, GenerationResult> job, CancellationToken cancellationToken)
     {

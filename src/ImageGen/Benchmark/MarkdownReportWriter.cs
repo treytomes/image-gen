@@ -6,6 +6,7 @@ namespace ImageGen.Benchmark;
 /// <summary>Renders a <see cref="BenchmarkReport"/> as a Markdown document.</summary>
 public static class MarkdownReportWriter
 {
+    /// <summary>Renders <paramref name="report"/> as a Markdown document string.</summary>
     public static string Render(BenchmarkReport report)
     {
         var sb = new StringBuilder();

@@ -13,6 +13,8 @@ namespace ImageGen.Benchmark;
 /// </summary>
 public sealed class BenchmarkRunner(GenerationQueue queue, ILogger<BenchmarkRunner> logger)
 {
+    /// <summary>Runs the benchmark for <paramref name="options"/> and returns the
+    /// collected report.</summary>
     public async Task<BenchmarkReport> RunAsync(BenchmarkOptions options, CancellationToken cancellationToken)
     {
         var threadsUsed = options.Threads ?? Environment.ProcessorCount;

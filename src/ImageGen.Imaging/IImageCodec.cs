@@ -8,10 +8,15 @@ public interface IImageCodec
 {
     /// <summary>Encodes tightly-packed 24-bit RGB pixels to <paramref name="path"/>,
     /// creating the directory if needed.</summary>
+    /// <param name="path">Destination file path.</param>
     /// <param name="rgb">RGB bytes, length must equal <paramref name="width"/> × <paramref name="height"/> × 3.</param>
+    /// <param name="width">Image width in pixels.</param>
+    /// <param name="height">Image height in pixels.</param>
     void Save(string path, ReadOnlySpan<byte> rgb, int width, int height);
 
     /// <summary>Encodes a <see cref="RawImage"/> to <paramref name="path"/>.</summary>
+    /// <param name="path">Destination file path.</param>
+    /// <param name="image">The image to encode.</param>
     void Save(string path, RawImage image);
 
     /// <summary>Decodes the image at <paramref name="path"/> into 24-bit RGB pixels.</summary>
@@ -21,4 +26,5 @@ public interface IImageCodec
 }
 
 /// <summary>Thrown when an image file is malformed or uses an unsupported feature.</summary>
+/// <param name="message">A description of the format problem.</param>
 public sealed class ImageFormatException(string message) : Exception(message);

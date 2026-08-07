@@ -20,7 +20,7 @@ public sealed class Png : IImageCodec
 
     // --- Encoding ---------------------------------------------------------------
 
-    /// <param name="rgb">Tightly packed RGB bytes, length == width * height * 3.</param>
+    /// <inheritdoc/>
     public void Save(string path, ReadOnlySpan<byte> rgb, int width, int height)
     {
         if (rgb.Length != width * height * 3)
@@ -59,6 +59,7 @@ public sealed class Png : IImageCodec
         WriteChunk(fs, "IEND", ReadOnlySpan<byte>.Empty);
     }
 
+    /// <inheritdoc/>
     public void Save(string path, RawImage image)
     {
         ArgumentNullException.ThrowIfNull(image);
@@ -67,6 +68,7 @@ public sealed class Png : IImageCodec
 
     // --- Decoding ---------------------------------------------------------------
 
+    /// <inheritdoc/>
     public RawImage Load(string path)
     {
         var bytes = File.ReadAllBytes(path);

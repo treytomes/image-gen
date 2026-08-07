@@ -14,6 +14,8 @@ namespace ImageGen;
 /// DI-resolved services.</summary>
 public static class CommandFactory
 {
+    /// <summary>Builds the root command with all subcommands, resolving services
+    /// from <paramref name="services"/>.</summary>
     public static RootCommand Build(IServiceProvider services)
     {
         var root = new RootCommand("Local text-to-image generator (Stable Diffusion, runs on your machine).");

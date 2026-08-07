@@ -23,15 +23,16 @@
         "safetensors",
         "scanline",
         "scanlines",
-        "slnx",
         "sdturbo",
         "sdxl",
         "sdxlturbo",
         "Serilog",
         "sixel",
+        "slnx",
         "stabilityai",
         "staticness",
         "truecolor",
-        "unfilter"
+        "unfilter",
+        "unskip"
     ]
 }

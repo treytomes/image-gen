@@ -7,6 +7,12 @@ namespace ImageGen.Imaging;
 /// </summary>
 public sealed class RawImage
 {
+    /// <summary>Creates a raw image from tightly-packed RGB pixels.</summary>
+    /// <param name="pixels">RGB bytes; length must equal <paramref name="width"/> × <paramref name="height"/> × 3.</param>
+    /// <param name="width">Image width in pixels.</param>
+    /// <param name="height">Image height in pixels.</param>
+    /// <exception cref="ArgumentException">Dimensions are non-positive or the pixel
+    /// buffer length does not match them.</exception>
     public RawImage(byte[] pixels, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(pixels);
@@ -24,7 +30,9 @@ public sealed class RawImage
     /// <summary>Tightly-packed RGB bytes (length == Width × Height × 3).</summary>
     public byte[] Pixels { get; }
 
+    /// <summary>Image width in pixels.</summary>
     public int Width { get; }
 
+    /// <summary>Image height in pixels.</summary>
     public int Height { get; }
 }

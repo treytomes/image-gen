@@ -12,12 +12,15 @@ public sealed class WorkJob<TRequest, TProgress, TResult>
     private readonly TaskCompletionSource<TResult> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <summary>Creates a job for <paramref name="request"/>, optionally reporting to
+    /// <paramref name="progress"/>.</summary>
     public WorkJob(TRequest request, IProgress<TProgress>? progress = null)
     {
         Request = request;
         Progress = progress;
     }
 
+    /// <summary>The work to perform.</summary>
     public TRequest Request { get; }
 
     /// <summary>Progress hook invoked by the worker; surfaced to Spectre.Console by the caller.</summary>

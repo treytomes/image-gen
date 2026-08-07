@@ -26,6 +26,7 @@ public abstract class QueueWorkerService<TRequest, TProgress, TResult>(
     /// <summary>Optional short description of a job for log messages (e.g. a file name).</summary>
     protected virtual string Describe(WorkJob<TRequest, TProgress, TResult> job) => "job";
 
+    /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var workers = Math.Max(1, WorkerCount);

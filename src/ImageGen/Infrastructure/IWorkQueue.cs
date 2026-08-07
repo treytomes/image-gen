@@ -33,6 +33,7 @@ public class ChannelWorkQueue<TRequest, TProgress, TResult>
             new UnboundedChannelOptions { SingleReader = singleReader, SingleWriter = false });
     }
 
+    /// <inheritdoc/>
     public WorkJob<TRequest, TProgress, TResult> Enqueue(TRequest request, IProgress<TProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -44,8 +45,10 @@ public class ChannelWorkQueue<TRequest, TProgress, TResult>
         return job;
     }
 
+    /// <inheritdoc/>
     public IAsyncEnumerable<WorkJob<TRequest, TProgress, TResult>> ReadAllAsync(CancellationToken cancellationToken) =>
         _channel.Reader.ReadAllAsync(cancellationToken);
 
+    /// <inheritdoc/>
     public void Complete() => _channel.Writer.TryComplete();
 }

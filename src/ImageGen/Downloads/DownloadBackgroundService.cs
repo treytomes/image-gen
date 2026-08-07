@@ -15,13 +15,17 @@ public sealed class DownloadBackgroundService(
     ILogger<DownloadBackgroundService> logger)
     : QueueWorkerService<DownloadRequest, DownloadProgress, string>(queue, logger)
 {
+    /// <inheritdoc/>
     protected override string ServiceName => "Download service";
 
+    /// <inheritdoc/>
     protected override int WorkerCount => options.Value.DownloadWorkerCount;
 
+    /// <inheritdoc/>
     protected override string Describe(WorkJob<DownloadRequest, DownloadProgress, string> job) =>
         job.Request.EffectiveDisplayName;
 
+    /// <inheritdoc/>
     protected override Task<string> ExecuteJobAsync(
         WorkJob<DownloadRequest, DownloadProgress, string> job, CancellationToken cancellationToken) =>
         downloader.DownloadAsync(job.Request, job.Progress, cancellationToken);

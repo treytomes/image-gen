@@ -12,5 +12,6 @@ namespace ImageGen;
 /// </summary>
 public sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
 {
+    /// <inheritdoc/>
     public void Report(T value) => handler(value);
 }

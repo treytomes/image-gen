@@ -11,9 +11,11 @@ public readonly record struct GenerationProgress(GenerationPhase Phase, int Step
     /// <summary>Fraction of sampling complete in [0,1], or null when total is unknown.</summary>
     public double? Fraction => ProgressFraction.Of(Step, TotalSteps);
 
+    /// <summary>Progress for the model-loading phase (0 of <paramref name="totalSteps"/>).</summary>
     public static GenerationProgress Loading(int totalSteps) =>
         new(GenerationPhase.LoadingModel, 0, totalSteps);
 
+    /// <summary>Progress for the sampling phase at the given step.</summary>
     public static GenerationProgress Sampling(int step, int totalSteps) =>
         new(GenerationPhase.Sampling, step, totalSteps);
 }
@@ -21,6 +23,9 @@ public readonly record struct GenerationProgress(GenerationPhase Phase, int Step
 /// <summary>The phase a generation job is in.</summary>
 public enum GenerationPhase
 {
+    /// <summary>The model is loading; sampling has not started.</summary>
     LoadingModel,
+
+    /// <summary>The sampler is denoising steps.</summary>
     Sampling,
 }

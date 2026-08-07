@@ -23,6 +23,7 @@ public static class Presets
 {
     // Turbo variants are distilled for few-step sampling and expect CFG ~1.0
     // (classifier-free guidance effectively off). Full SD 1.5 wants CFG ~7.
+    /// <summary>All built-in presets.</summary>
     public static readonly IReadOnlyList<ModelPreset> All =
     [
         new(
@@ -75,8 +76,10 @@ public static class Presets
             Scheduler: Scheduler.AYS),
     ];
 
+    /// <summary>The CLI keys of all presets.</summary>
     public static readonly IReadOnlyList<string> Keys = All.Select(p => p.Key).ToArray();
 
+    /// <summary>Finds a preset by CLI key (case-insensitive), or null if none matches.</summary>
     public static ModelPreset? Find(string key) =>
         All.FirstOrDefault(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase));
 }
