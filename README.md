@@ -109,6 +109,27 @@ When `--out` is omitted, output PNGs are written to a timestamped file under
 `out/` — e.g. `out/sd15-20260806-145000-seed42.png` — so successive runs don't
 overwrite each other.
 
+### Image-to-image (editing an existing image)
+
+`--init <png>` starts generation from an existing image instead of pure noise, so
+the prompt reworks *that* picture rather than inventing one from scratch.
+`--strength` (0–1, default 0.75) controls how far the result may stray:
+
+```bash
+# Subtle restyle — output stays close to the input
+dotnet run -- generate sd15 "a red fox in an autumn forest" --init photo.png --strength 0.3
+
+# Loose reinterpretation — keeps only rough structure
+dotnet run -- generate sd15 "an oil painting of a fox" --init photo.png --strength 0.8
+```
+
+- **Low strength (~0.2–0.4)** — small changes; good for restyling or cleanup.
+- **High strength (~0.7–0.9)** — heavy changes; the input only guides composition.
+- The input may be any PNG our decoder reads (8-bit RGB/RGBA, non-interlaced).
+  **Output size follows the input**, so `--size` is ignored with `--init`.
+- Works with any preset. Combine with `--count` for a strength/seed sweep, or
+  `--preview` to watch the edit converge.
+
 ### Batch generation and stopping early
 
 `--count <N>` generates N images in one run, incrementing the seed each time
@@ -192,12 +213,18 @@ rest wait in the queue.
 
 | Flag | Meaning |
 |---|---|
-| `--out <file>` | Output PNG path |
+| `--out`, `-o` `<file>` | Output PNG path |
 | `--seed <n>` | RNG seed (default 42; `-1` = random) |
 | `--steps <n>` | Sampling steps |
 | `--cfg <f>` | Guidance scale |
-| `--size <w>x<h>` | Dimensions, e.g. `512x512` |
-| `--negative "<p>"` | Negative prompt |
+| `--size <w>x<h>` | Dimensions, e.g. `512x512` (ignored with `--init`) |
+| `--negative`, `-n` `"<p>"` | Negative prompt |
+| `--init`, `-i` `<png>` | Input image for image-to-image (start from it, not noise) |
+| `--strength <f>` | Image-to-image strength 0–1 (default 0.75); only with `--init` |
+| `--scheduler <name>` | Sampling scheduler (overrides preset; e.g. `AYS`, `Karras`) |
+| `--count`, `-c` `<n>` | Generate N images, incrementing the seed |
+| `--preview <n>` | Save a preview frame every N steps (0 = off) |
+| `--preview-mode <m>` | Preview decoder: `tae` (default), `vae`, `proj` |
 | `--threads <n>` | CPU thread count (default: all cores) |
 
 ### Parameters explained

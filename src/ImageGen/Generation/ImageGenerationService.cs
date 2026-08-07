@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using HPPH;
 using ImageGen.Imaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -42,10 +43,25 @@ public sealed class ImageGenerationService(
                 "Run 'download --preset <name>' or set MODELS_DIR.", modelPath);
         }
 
+        // Load the init image up front (fail fast before the multi-GB model load) for
+        // image-to-image; null for text-to-image.
+        RawImage? initImage = null;
+        if (request.IsImageToImage)
+        {
+            if (!File.Exists(request.InitImagePath))
+                throw new FileNotFoundException("Init image not found.", request.InitImagePath);
+            initImage = imageCodec.Load(request.InitImagePath!);
+            logger.LogInformation(
+                "Image-to-image from {Path} ({Width}x{Height}, strength {Strength})",
+                request.InitImagePath, initImage.Width, initImage.Height, request.Strength);
+        }
+
         var modelParam = DiffusionModelParameter.Create();
         modelParam.ModelPath = modelPath;
         modelParam.ThreadCount = request.EffectiveThreads;
-        modelParam.VaeDecodeOnly = true; // text-to-image only; saves memory
+        // Text-to-image only needs the VAE decoder (saves memory); image-to-image also
+        // needs the encoder to turn the init image into a latent.
+        modelParam.VaeDecodeOnly = !request.IsImageToImage;
 
         var vaePath = request.Preset.VaeFileName is { } vae ? Path.Combine(ModelsDir, vae) : null;
         if (vaePath is not null && File.Exists(vaePath))
@@ -132,7 +148,7 @@ public sealed class ImageGenerationService(
             cancellationToken.ThrowIfCancellationRequested();
 
             var genStart = Stopwatch.GetTimestamp();
-            var image = model.GenerateImage(BuildParameter(request));
+            var image = model.GenerateImage(BuildParameter(request, initImage));
             var genSeconds = Stopwatch.GetElapsedTime(genStart).TotalSeconds;
 
             if (image is null)
@@ -164,12 +180,28 @@ public sealed class ImageGenerationService(
         }
     }
 
-    private static ImageGenerationParameter BuildParameter(GenerationRequest request)
+    private static ImageGenerationParameter BuildParameter(GenerationRequest request, RawImage? initImage)
     {
-        var p = ImageGenerationParameter.TextToImage(request.Prompt);
+        ImageGenerationParameter p;
+        if (initImage is not null)
+        {
+            // Image-to-image: start from the init image. Its dimensions drive the
+            // output size, so we set Width/Height from it rather than the preset.
+            var hpph = Image<ColorRGB>.Create(
+                initImage.Pixels, initImage.Width, initImage.Height, initImage.Width * 3);
+            p = ImageGenerationParameter.ImageToImage(request.Prompt, hpph);
+            p.Strength = request.Strength;
+            p.Width = initImage.Width;
+            p.Height = initImage.Height;
+        }
+        else
+        {
+            p = ImageGenerationParameter.TextToImage(request.Prompt);
+            p.Width = request.EffectiveWidth;
+            p.Height = request.EffectiveHeight;
+        }
+
         p.NegativePrompt = request.EffectiveNegativePrompt;
-        p.Width = request.EffectiveWidth;
-        p.Height = request.EffectiveHeight;
         p.Seed = request.Seed;
         p.SampleParameter.SampleSteps = request.EffectiveSteps;
         p.SampleParameter.SampleMethod = request.Preset.Sampler;

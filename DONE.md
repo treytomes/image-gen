@@ -101,3 +101,21 @@ I/O is injectable and swappable; registered `IImageCodec -> Png` and injected in
   Guards the Sub/Up/Average/Paeth and alpha-drop paths our own encoder never exercises.
 - Verified beyond the suite: decoded a real 512×512 app-generated PNG and an external
   RGBA PNG.
+
+## Image editing — img2img
+
+`generate --init <png> [--strength <f>]` starts from an existing image instead of
+noise; `--strength` (0–1, default 0.75) sets how far the result may stray. First of
+the five editing modes (see TODO.md for the rest).
+
+- Input is loaded via `IImageCodec.Load`, wrapped as `HPPH.Image<ColorRGB>` via the
+  4-arg `Create(bytes, w, h, stride)` overload (raw RGB straight through; ColorRGB is
+  3 bytes), and fed to `ImageGenerationParameter.ImageToImage`. Output size follows
+  the init image, so `--size` is ignored.
+- **Gotcha handled:** the model must load with `VaeDecodeOnly = false` for img2img —
+  encoding the init image into a latent needs the VAE *encoder*, which the
+  text-to-image default (`true`) omits. Set from `request.IsImageToImage`.
+- Init image is loaded up front (fail fast before the multi-GB model load).
+- Verified end-to-end: strength 0.3 → mean 3.8/px diff from the source (subtle),
+  0.8 → 55.4/px (heavy divergence) — confirming `Strength` behaves as intended, not
+  just that it runs.

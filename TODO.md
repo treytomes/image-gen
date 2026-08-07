@@ -37,20 +37,11 @@ There is a static `ImageGenerationParameter.ImageToImage(prompt, image)` factory
 paralleling `TextToImage`. Some modes also need model-load-time paths on
 `DiffusionModelParameter`: `ControlNetPath`, `StackedIdEmbeddingsDirectory`.
 
-### 3a. img2img — `InitImage` + `Strength`  [CPU: easy, recommended first]
+### 3a. img2img — `InitImage` + `Strength`  ✅ SHIPPED
 
-- Feed an init image; `Strength` (0–1) sets how far from it to wander (low = subtle
-  restyle, high = loosely inspired). Fewer effective steps than txt2img, so it's
-  *cheaper* than generation.
-- Needs: load the input via `IImageCodec` (done). No extra weights — uses current
-  sd15/sdxl checkpoints.
-- Impl: `GenerationRequest.InitImagePath` + `Strength`; if set, call
-  `ImageToImage(prompt, img)` instead of `TextToImage`. New `edit`/`img2img` command
-  or an `--init <png> --strength <f>` pair on `generate`.
-- Testing: round-trip a generated PNG back in at strength 0.3 and 0.8; confirm low
-  strength barely changes it, high strength diverges.
+Done — `generate --init <png> --strength <f>`. See [DONE.md](DONE.md).
 
-### 3b. inpaint — `MaskImage`  [CPU: easy]
+### 3b. inpaint — `MaskImage`  [CPU: easy — do next]
 
 - Supply image + mask; only the masked region is regenerated.
 - Needs: load image **and** mask via `IImageCodec` (done). **Open question
@@ -96,8 +87,8 @@ paralleling `TextToImage`. Some modes also need model-load-time paths on
 ### Suggested order
 
 0. ~~**PNG decoder** (`Png.Load`) — unblocks everything.~~ **DONE.**
-1. **img2img** (3a) — smallest, most useful, no extra weights. Start here.
-2. **inpaint** (3b) — small delta over img2img; answer the base-vs-dedicated-model question.
+1. ~~**img2img** (3a) — smallest, most useful, no extra weights.~~ **DONE.**
+2. **inpaint** (3b) — small delta over img2img; answer the base-vs-dedicated-model question. **Start here.**
 3. **ControlNet** (3c) — first one needing model-load changes + an extra download.
 4. **Investigate RefImages** (3d) before deciding; **PhotoMaker** (3e) last.
 

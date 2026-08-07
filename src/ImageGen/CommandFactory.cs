@@ -42,7 +42,18 @@ public static class CommandFactory
         var cfgOpt = new Option<float?>("--cfg") { Description = "Override guidance (CFG) scale." };
         var negOpt = new Option<string?>("--negative", "-n") { Description = "Negative prompt." };
         var threadsOpt = new Option<int?>("--threads") { Description = "CPU thread count (default: all cores)." };
-        var sizeOpt = new Option<string?>("--size") { Description = "Dimensions as WxH, e.g. 512x512." };
+        var sizeOpt = new Option<string?>("--size") { Description = "Dimensions as WxH, e.g. 512x512 (ignored with --init)." };
+        var initOpt = new Option<string?>("--init", "-i")
+        {
+            Description = "Input PNG for image-to-image: start from this image instead of noise. " +
+                          "Output size follows the input, so --size is ignored.",
+        };
+        var strengthOpt = new Option<float>("--strength")
+        {
+            Description = "Image-to-image denoising strength 0-1 (default 0.75): low restyles " +
+                          "subtly, high keeps only loose structure. Only used with --init.",
+            DefaultValueFactory = _ => 0.75f,
+        };
         var schedulerOpt = new Option<string?>("--scheduler")
         {
             Description = $"Sampling scheduler ({string.Join(", ", Enum.GetNames<Scheduler>())}). " +
@@ -70,7 +81,7 @@ public static class CommandFactory
         var cmd = new Command("generate", "Generate an image from a text prompt.")
         {
             presetArg, promptArg, outOpt, seedOpt, stepsOpt, cfgOpt, negOpt, threadsOpt, sizeOpt,
-            schedulerOpt, countOpt, previewOpt, previewModeOpt,
+            initOpt, strengthOpt, schedulerOpt, countOpt, previewOpt, previewModeOpt,
         };
 
         cmd.SetAction(async (parseResult, cancellationToken) =>
@@ -126,6 +137,8 @@ public static class CommandFactory
                 Seed = seed,
                 Threads = parseResult.GetValue(threadsOpt),
                 OutputPath = explicitOut,
+                InitImagePath = parseResult.GetValue(initOpt),
+                Strength = parseResult.GetValue(strengthOpt),
                 PreviewInterval = Math.Max(0, parseResult.GetValue(previewOpt)),
                 PreviewMode = previewMode,
             };
@@ -223,7 +236,10 @@ public static class CommandFactory
         table.AddColumn("v");
         table.AddRow("Preset", $"[bold]{Markup.Escape(r.Preset.Name)}[/]");
         table.AddRow("Model file", Markup.Escape(r.Preset.FileName));
-        table.AddRow("Size", $"{r.EffectiveWidth}x{r.EffectiveHeight}");
+        if (r.IsImageToImage)
+            table.AddRow("Init / Strength", $"{Markup.Escape(r.InitImagePath!)} @ {r.Strength}");
+        else
+            table.AddRow("Size", $"{r.EffectiveWidth}x{r.EffectiveHeight}");
         table.AddRow("Steps / CFG", $"{r.EffectiveSteps} / {r.EffectiveCfg}");
         table.AddRow("Sampler / Scheduler", $"{r.Preset.Sampler} / {r.EffectiveScheduler}");
         table.AddRow("Seed / Threads", $"{r.Seed} / {r.EffectiveThreads}");

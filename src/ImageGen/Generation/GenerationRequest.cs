@@ -28,6 +28,18 @@ public sealed record GenerationRequest
     /// <summary>Explicit output file path, or null for a timestamped default.</summary>
     public string? OutputPath { get; init; }
 
+    /// <summary>Path to an input image for image-to-image, or null for text-to-image.
+    /// When set, generation starts from this image instead of pure noise.</summary>
+    public string? InitImagePath { get; init; }
+
+    /// <summary>Image-to-image denoising strength in [0,1]: how far the output may
+    /// stray from the init image. Low (~0.3) restyles subtly; high (~0.8) keeps only
+    /// loose structure. Ignored unless <see cref="InitImagePath"/> is set.</summary>
+    public float Strength { get; init; } = 0.75f;
+
+    /// <summary>True when this is an image-to-image request (an init image is set).</summary>
+    public bool IsImageToImage => !string.IsNullOrEmpty(InitImagePath);
+
     /// <summary>When &gt; 0, save an intermediate preview image every this many sampling
     /// steps so the image can be watched as it forms. 0 disables previews.</summary>
     public int PreviewInterval { get; init; }
