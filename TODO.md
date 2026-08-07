@@ -66,6 +66,50 @@ pause/resume.
 - UX: write frames to disk (safe default) vs. in-terminal display (Spectre can't show
   raster images; would need sixel/kitty support — out of scope).
 
+### Implementation notes (concrete plan for the spike)
+
+Touch points, smallest-diff-first. This mirrors how the `Progress` event was wired, so
+it slots into the existing engine cleanly.
+
+1. **`GenerationRequest`** ([Generation/GenerationRequest.cs](Generation/GenerationRequest.cs)) —
+   add `int PreviewInterval { get; init; }` (0 = off) and optionally
+   `Preview PreviewMode { get; init; } = Preview.TAE`. Default off so nothing changes
+   for normal runs.
+
+2. **`ImageGenerationService.Generate`** ([Generation/ImageGenerationService.cs](Generation/ImageGenerationService.cs)) —
+   where `Progress` is already subscribed:
+   - If `request.PreviewInterval > 0`: call
+     `StableDiffusionCpp.EnablePreview(request.PreviewMode, request.PreviewInterval, denoised: true, noisy: false)`
+     and subscribe a local `OnPreview(object?, StableDiffusionPreviewEventArgs e)` handler.
+   - In the handler: `Png.Save(previewDir/$"step-{e.Step:D3}.png", e.Image.ToRawArray(), e.Image.Width, e.Image.Height)`.
+     Reuse the exact `ToRawArray()` → `Png.Save` path already used for the final image.
+   - Compute `previewDir` once (e.g. `out/preview/<preset>-<timestamp>/`); create it lazily.
+   - Unsubscribe `Preview` in the same `finally` that unsubscribes `Progress`; also call
+     `EnablePreview(Preview.None, 0, ...)` to disable, so preview state doesn't leak to
+     the next job (events are static/global).
+   - Consider returning the preview dir on `GenerationResult` so the CLI can print it.
+
+3. **CLI** ([CommandFactory.cs](CommandFactory.cs), `BuildGenerateCommand`) — add
+   `--preview <interval>` (int, default 0) and optionally `--preview-mode <tae|vae|proj>`.
+   Thread into the `GenerationRequest`. On success, print the preview dir if frames were
+   written.
+
+4. **Thread-safety note:** the `Preview` handler fires on the native worker thread (same
+   as `Progress`). `Png.Save` is a plain file write with no shared state, so no extra
+   synchronization is needed — but do NOT touch the Spectre `ProgressContext` from the
+   preview handler except via the same synchronous pattern already used (see
+   `SynchronousProgress`). Simplest: the preview handler only writes files, touches no UI.
+
+5. **Cancellation experiment (step 4 above):** wire the worker's `CancellationToken` so a
+   Ctrl-C / cancel attempt is observable, then test whether an in-flight `GenerateImage`
+   actually stops. If it does not (likely, since the native call takes no token), leave
+   the token checked only between jobs and document "abort = discard after current run."
+
+### Estimated size
+
+Small — one new option, ~1 new field, ~15 lines in the engine, reusing `Png.cs`
+wholesale. The runtime cancellation test is the only real unknown.
+
 ---
 
 ## 2. CFG scheduling (guidance that changes across the run)
