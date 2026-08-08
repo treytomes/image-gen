@@ -93,6 +93,54 @@ Some modes also need model-load-time paths on `DiffusionModelParameter`:
 
 ---
 
+## Inference speed (CPU)
+
+Levers exposed by StableDiffusion.NET 7.0.0 (verified by reflection), ordered by
+expected CPU impact. CPU inference is memory-bandwidth- and compute-bound, so the
+big wins reduce the actual work; several GPU-oriented flags do little here.
+
+**Tried and rejected:**
+- ~~**Quantization**~~ (`DiffusionModelParameter.Quantization`, "quantizes on load")
+  — **MEASURED, not a CPU speed lever.** sd15 @ 20 steps: fp16 gen 299.0s, Q8_0
+  289.3s (~3%), Q4_K 286.7s (~4%, and load time *rose* to 6.2s from the on-load
+  quantize). Output stayed near-identical (Q8_0 vs fp16 mean 5.3/255 per byte). Gen
+  time is dominated by compute that dequantizes regardless, so fewer bits saves RAM
+  but not math — stable-diffusion.cpp's CPU path lacks the quantized-matmul kernels
+  that make this a win for LLMs (llama.cpp). Feature was built and reverted; don't
+  re-investigate for speed. (Still a *memory* lever if a machine can't fit the ~7 GB
+  SDXL weights — but that's RAM, not speed.)
+
+**High impact — reduce the work:**
+- **TAESD decode** (`DiffusionModelParameter.TaesdPath`) — the tiny autoencoder
+  decodes latent→pixels far cheaper than the full VAE (same TAE we use for
+  previews). Small quality cost; biggest relative win on short Turbo runs where the
+  VAE decode is a larger share of total time. Needs the TAESD weights downloaded.
+- **Fewer steps / right preset** — already the dominant factor (sdturbo 2 steps
+  ≈ 8.6× faster than sd15). No new lever; the existing tradeoff.
+
+**Worth measuring — may help:**
+- ~~**ThreadCount = physical cores.**~~ **MEASURED: 22 (logical) is faster than 11
+  (physical)** on this machine — sdturbo median 32.9s @ 22 vs 35.8s @ 11. Hyper-
+  threading helps here; the `Environment.ProcessorCount` default stays. (Still
+  worth `--threads`-tuning per machine.)
+- **AVX level** (`CpuBackend.AvxLevel`: None/Avx/Avx2/Avx512) — force the best
+  instruction set if the native lib isn't already. Check what it selects.
+- **ConvDirect** (`DiffusionConvDirect` / `VaeConvDirect`) — direct convolution;
+  helps or hurts depending on tensor shapes. Pure "measure it" flag.
+- **FlashAttention** (`FlashAttention` / `DiffusionFlashAttention`) — mainly a GPU
+  memory-bandwidth optimization; likely neutral on CPU. Benchmark before adopting.
+
+**Skip on CPU (no-ops or harmful here):**
+- `OffloadParamsToCPU`, `KeepClipOnCPU`, `KeepVaeOnCPU`, `KeepControlNetOnCPU` —
+  these move work off a GPU to save VRAM; on a CPU-only box everything is already on
+  CPU.
+- `EnableMmap` — speeds model *loading*, not inference; load is already ~1–3s.
+
+Method: measure each with the `benchmark` command at a fixed prompt/seed so numbers
+are real, not assumed. Verify output stays valid (quantization especially).
+
+---
+
 ## Parked / revisit
 
 Not planned work, but worth keeping in view:

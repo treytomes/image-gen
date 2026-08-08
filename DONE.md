@@ -183,3 +183,22 @@ carry forward as the next round's defaults.
   proved less natural than Enter-through defaults.)
 - Verified: build 0/0, 17 tests pass, all new YAML keys bind, non-interactive path
   exits gracefully. Interactive rendering still not driveable from the dev shell.
+
+## Inference-speed experiments (measured)
+
+Two levers tested with the `benchmark`/`generate` timing output; both settled by
+measurement rather than assumption:
+
+- **Thread count.** Default is `Environment.ProcessorCount` (22 logical here).
+  Tested `--threads 11` (physical cores) on the theory that hyperthreads contend
+  for FP units — but 22 was **faster** (sdturbo median 32.9s @ 22 vs 35.8s @ 11).
+  Hyperthreading helps on this CPU; the default stays, and `--threads` remains for
+  per-machine tuning.
+- **Quantization** (`DiffusionModelParameter.Quantization`, "quantizes on load").
+  **Not a CPU speed lever** — built `--quantize`, measured, reverted. sd15 @ 20
+  steps: fp16 gen 299.0s, Q8_0 289.3s (~3%), Q4_K 286.7s (~4%, load time rose to
+  6.2s). Output near-identical (Q8_0 vs fp16 mean 5.3/255 per byte). Gen is
+  dominated by compute that dequantizes regardless, so fewer bits saves RAM, not
+  math — stable-diffusion.cpp's CPU path lacks the quantized-matmul kernels that
+  make quantization a win for LLMs (llama.cpp). Keep in mind only as a *memory*
+  lever (fitting the ~7 GB SDXL weights on a constrained machine), never for speed.
