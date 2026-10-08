@@ -48,3 +48,8 @@
 - Previews are slow because decode happens every step (not just saved steps).
 - Turbo presets ignore/are brittle with high CFG and extra steps.
 - SDXL is full base (not distilled) - real CFG/neg but expensive on CPU.
+
+## Environment / Tooling notes
+- The `bash` tool on this Windows host runs PowerShell 5.1, not bash. Always use PowerShell syntax (Get-Content, Select-Object, Select-String, Where-Object; avoid &&/||; use PowerShell conditionals).
+- Use PowerShell-native equivalents instead of POSIX tools (e.g. Select-String instead of grep, Get-Content with Select-Object for head/tail).
+- Git has core.autocrlf=false, core.eol=lf locally.
