@@ -1,0 +1,49 @@
+ImageGen:
+  ModelsDir: models
+  DownloadWorkerCount: 2
+
+  # Interactive refinement loop (generate --repl). Refinement is image-to-image,
+  # where strength effectively scales how many sampling steps run
+  # (effective ~= strength x steps). With a preset's few-step default (e.g. SD
+  # Turbo's 2 steps) strength collapses to ~2 outcomes and feels like an on/off
+  # switch, so the REPL uses its own higher step count for finer control.
+  Refinement:
+    # Sampling steps per refinement round (overrides the preset default). Higher =
+    # smoother strength control but slower per round. <= 0 falls back to the preset.
+    Steps: 20
+    # If a round's effective steps (strength x steps) drop below this, the REPL
+    # warns that strength control is coarse. Set to 0 to disable the hint.
+    CoarseStrengthStepThreshold: 4
+    # Starting img2img strength (0-1) for the first round; the REPL remembers the
+    # last value after that. Change mid-session with /strength.
+    Strength: 0.5
+    # Guidance (CFG) scale for refinement. Leave unset (null) to use the preset
+    # default. Only affects sd15/sdxl -- Turbo presets bake CFG ~= 1. (/cfg)
+    # Cfg: 7.0
+    # Negative prompt applied every round (null = none). Only meaningful on
+    # non-distilled presets. (/neg)
+    # NegativePrompt: "blurry, low quality, deformed"
+    # Sampling scheduler for refinement (e.g. AYS, Karras); null = preset default. (/scheduler)
+    # Scheduler: AYS
+    # When true, each round uses a fresh random seed so re-running a prompt explores
+    # variations; false makes rounds reproducible. /reroll forces a new seed anyway.
+    RandomSeedEachRound: false
+
+Serilog:
+  MinimumLevel:
+    Default: Information
+    Override:
+      Microsoft: Warning
+      Microsoft.Hosting.Lifetime: Information
+  WriteTo:
+    # - Name: Console
+    #   Args:
+    #     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
+    - Name: File
+      Args:
+        path: logs/imagegen-.log
+        rollingInterval: Day
+        retainedFileCountLimit: 14
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+  Enrich:
+    - FromLogContext

@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ImageGen.Imaging/ImageGen.Imaging.csproj" />
+    <Project Path="src/ImageGen.Web/ImageGen.Web.csproj" />
     <Project Path="src/ImageGen/ImageGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
