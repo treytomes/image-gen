@@ -17,8 +17,12 @@ using Spectre.Console;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// appsettings.yaml is copied next to the binary; load it from there rather than
+// the working directory, which is the repo root (so models/, out/, logs/ resolve
+// there) and has no appsettings.yaml of its own.
 builder.Configuration
-    .AddYamlFile("appsettings.yaml", optional: true, reloadOnChange: false)
+    .AddYamlFile(new Microsoft.Extensions.FileProviders.PhysicalFileProvider(AppContext.BaseDirectory),
+        "appsettings.yaml", optional: true, reloadOnChange: false)
     .AddEnvironmentVariables(prefix: "IMAGEGEN_");
 
 builder.Services.Configure<ImageGenOptions>(

@@ -1,7 +1,8 @@
 # AGENTS.md - ImageGen
 
 ## Quickstart
-- .NET 10 SDK required. Run commands from repo root.
+- Fresh machine: `./bootstrap.ps1` (checks the SDK, builds, tests; `-Models sdturbo` fetches a model).
+- .NET 10 SDK required (pinned by `global.json`). Run commands from repo root.
 - Build: `dotnet build ImageGen.slnx`
 - Test: `dotnet test ImageGen.slnx` (only imaging tests exist)
 - Run: `dotnet run --project src/ImageGen -- <command>` (abbreviated as `dotnet run -- ...` in docs)
@@ -52,4 +53,5 @@
 ## Environment / Tooling notes
 - The `bash` tool on this Windows host runs PowerShell 5.1, not bash. Always use PowerShell syntax (Get-Content, Select-Object, Select-String, Where-Object; avoid &&/||; use PowerShell conditionals).
 - Use PowerShell-native equivalents instead of POSIX tools (e.g. Select-String instead of grep, Get-Content with Select-Object for head/tail).
-- Git has core.autocrlf=false, core.eol=lf locally.
+- Line endings are LF, enforced by `.gitattributes` (no local git config needed).
+- `appsettings.yaml` is loaded from `AppContext.BaseDirectory` (copied to output), not the working directory. Don't revert to a cwd-relative path: the repo root has no yaml, so config and file logging would be silently skipped.

@@ -20,6 +20,25 @@ bytes, generation reports denoising steps (via stable-diffusion.cpp's progress
 event). Downloads use a configurable worker pool; generation uses a single worker
 since it is CPU/GPU-bound and holds the model in memory.
 
+## Setting up a new machine
+
+```powershell
+git clone https://github.com/treytomes/image-gen.git
+cd image-gen
+./bootstrap.ps1 -Models sdturbo     # check SDK, build, test, fetch the fastest model
+```
+
+[bootstrap.ps1](bootstrap.ps1) checks for the .NET 10 SDK, builds, and runs the
+tests. Its other switches are optional: `-Models <preset>...` or `-AllModels`
+download weights (the full set is tens of GB), `-TrustDevCert` trusts the HTTPS
+dev certificate for the web UI, `-SkipTests` skips the tests, and `-ClaudeMemory`
+points Claude Code's auto-memory at the committed `.claude/memory/` folder. You
+can run it again safely.
+
+Nothing else needs to be configured on the machine. [global.json](global.json)
+pins the SDK major version, and [.gitattributes](.gitattributes) normalizes line
+endings, so the clone doesn't depend on the machine's `core.autocrlf`.
+
 ## Requirements
 
 - .NET 10 SDK
@@ -34,6 +53,7 @@ The solution is [ImageGen.slnx](ImageGen.slnx):
 ```
 src/
   ImageGen/            the console app (host, commands, generation, downloads)
+  ImageGen.Web/        Blazor Server web UI, reusing ImageGen's services
   ImageGen.Imaging/    generic image tools (PNG encode/decode) — pure, unit-tested
 tests/
   ImageGen.Imaging.Tests/   xUnit tests for the deterministic imaging code
@@ -46,7 +66,11 @@ uses paths relative to the working directory, so run commands from the repo root
 dotnet build ImageGen.slnx          # build everything
 dotnet test ImageGen.slnx           # run the imaging tests
 dotnet run --project src/ImageGen -- list   # run the app
+dotnet run --project src/ImageGen.Web       # run the web UI → https://localhost:7192
 ```
+
+Each app's `appsettings.yaml` is copied next to its binary and loaded from there,
+so running from the repo root picks it up.
 
 The usage examples below abbreviate `dotnet run --project src/ImageGen --` to
 `dotnet run --` for brevity — run them from the repo root with the full

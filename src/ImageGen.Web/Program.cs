@@ -7,8 +7,11 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// appsettings.yaml is copied next to the binary; load it from there rather than
+// the working directory (the repo root, where models/, out/, logs/ live).
 builder.Configuration
-    .AddYamlFile("appsettings.yaml", optional: true, reloadOnChange: false)
+    .AddYamlFile(new Microsoft.Extensions.FileProviders.PhysicalFileProvider(AppContext.BaseDirectory),
+        "appsettings.yaml", optional: true, reloadOnChange: false)
     .AddEnvironmentVariables(prefix: "IMAGEGEN_");
 
 builder.Services.Configure<ImageGenOptions>(

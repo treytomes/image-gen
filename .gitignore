@@ -4,3 +4,11 @@ out/
 models/
 logs/
 reports/
+
+# IDE / per-user state
+.vs/
+*.user
+
+# Claude Code per-machine settings (permission allowlist with local paths).
+# The repo's shared memory in .claude/memory/ IS committed.
+.claude/settings.local.json

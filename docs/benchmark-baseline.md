@@ -10,7 +10,7 @@ Generated: 2026-08-06 16:46:59 -05:00
 
 | Field | Value |
 |---|---|
-| Machine | CES-GXC2C54 |
+| Machine | (redacted) |
 | OS | Microsoft Windows 10.0.26200 |
 | Logical cores | 22 |
 | Physical cores | 11 |

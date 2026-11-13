@@ -1,0 +1,14 @@
+# Normalize line endings in the repo to LF regardless of the cloning machine's
+# core.autocrlf setting, so a fresh clone matches without local git config.
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.png binary
+*.ico binary
+*.eot binary
+*.otf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.safetensors binary
+*.gguf binary
